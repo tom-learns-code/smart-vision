@@ -1,0 +1,44 @@
+# Backup and generated folders
+backup/
+_codex_backups/
+encoding_backup_*/
+
+# Editor settings
+.vscode/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Build outputs and temporary files
+Debug/
+Release/
+build/
+dist/
+out/
+output/
+tmp/
+temp/
+edge_tmp/
+Objects/
+Listings/
+*.axf
+*.elf
+*.hex
+*.bin
+*.map
+*.lst
+*.o
+*.obj
+*.d
+*.crf
+*.htm
+*.dep
+*.lnp
+
+# Logs
+*.log
+
+# OS files
+Thumbs.db
+.DS_Store

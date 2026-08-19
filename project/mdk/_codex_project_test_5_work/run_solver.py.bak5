@@ -1,0 +1,820 @@
+"""
+求解器入口 — c_solver 两阶段求解 + 旧 8-step pipeline (保留作参考)
+
+用法: python run_solver.py [map_file]
+默认: maps_export/map0.txt
+"""
+
+import sys, os, time, json
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from core.map_analysis import load_map_from_file, scan_map
+from algorithms.path_analysis import compare_connectivity, analyze_channels
+from algorithms.blast_select import preplan_blasts
+from algorithms.assignment import solve_assignment
+from algorithms.blast_refine import refine_blast_points
+from algorithms.path_search import generate_pair_plans
+from algorithms.scheduler import schedule_pair_plans
+from algorithms.action_generator import generate_actions, compute_action_stats
+from core.avoidance_graph import AvoidanceGraph
+
+
+# =============================================================================
+# c_solver 两阶段求解入口（新建）
+# =============================================================================
+
+def solve_with_c_solver(map_data, verbose=True):
+    """
+    使用 c_solver 进行两阶段求解。
+
+    返回:
+        {
+            'success': bool,
+            'actions': list,       # P1 结构化 actions（含 end_of_phase1）
+            'p1_res': PhaseResult, # 供后续 P2 调用
+            'error': str | None,
+            'timing': dict,
+        }
+    """
+    from c_solver import reset_globals, run_phase1, PhaseResult
+
+    t_start = time.perf_counter()
+
+    # 从 map_data 构建 raw_map（12x16 字符数组）
+    raw_map = _build_raw_map(map_data)
+
+    # 重置全局状态
+    reset_globals()
+
+    # 阶段一
+    p1_res = PhaseResult()
+    success = run_phase1(raw_map, p1_res, mode=4, skip_flag=0)
+
+    elapsed_ms = (time.perf_counter() - t_start) * 1000
+
+    if not success:
+        return {
+            'success': False,
+            'actions': [],
+            'p1_res': p1_res,
+            'error': 'P1 无解',
+            'timing': {'total': elapsed_ms},
+        }
+
+    if verbose:
+        print(f"[c_solver] P1 求解成功: {len(p1_res.structured_actions)} 条结构化 action, "
+              f"耗时 {elapsed_ms:.0f}ms")
+
+    # P1 斜线平滑（墙按爆炸时序逐步更新）
+    walls = set(map_data['walls'])
+    width, height = map_data['width'], map_data['height']
+    boxes_positions = list(map_data.get('boxes_start', map_data.get('boxes', [])))
+    bombs_positions = list(map_data.get('bombs', []))
+    _smooth_actions(p1_res.structured_actions, walls,
+                    boxes_positions, bombs_positions, width, height)
+
+    return {
+        'success': True,
+        'actions': p1_res.structured_actions,
+        'p1_res': p1_res,
+        'info': {
+            'observed_box_indices': p1_res.observed_box_indices,
+            'observed_target_indices': p1_res.observed_target_indices,
+        },
+        'error': None,
+        'timing': {'total': elapsed_ms},
+    }
+
+
+def solve_phase2_with_c_solver(box_ids, target_ids, p1_res, verbose=True):
+    """
+    P1 执行完毕后，用已知ID调用 P2。
+
+    Args:
+        box_ids: 箱子 ID 数组（如 [3, 1, 7]，按索引排列）
+        target_ids: 目标 ID 数组（如 [7, 3, 1]）
+        p1_res: P1 的 PhaseResult
+    Returns:
+        {'success': bool, 'actions': list, 'error': str|None}
+    """
+    from c_solver import run_phase2, PhaseResult
+
+    t_start = time.perf_counter()
+
+    p2_res = PhaseResult()
+    success = run_phase2(box_ids, target_ids, p2_res)
+
+    elapsed_ms = (time.perf_counter() - t_start) * 1000
+
+    if not success:
+        return {
+            'success': False,
+            'actions': [],
+            'error': 'P2 无解',
+            'timing': {'total': elapsed_ms},
+        }
+
+    if verbose:
+        print(f"[c_solver] P2 求解成功: {len(p2_res.structured_actions)} 条结构化 action, "
+              f"耗时 {elapsed_ms:.0f}ms")
+
+    return {
+        'success': True,
+        'actions': p2_res.structured_actions,
+        'error': None,
+        'timing': {'total': elapsed_ms},
+    }
+
+
+def _resolve_ids(known_box_ids, known_target_ids):
+    """
+    消除法推理：用已观察的 ID 填满未观察的 -1。
+
+    规则：
+      1. 已观察且相等 → 直接配对
+      2. 已观察但找不到对方 → 和对方未观察的格子配对（ID 由已观察方决定）
+      3. 双方都未观察 → 剩余自动配对（赋相同临时值，确保 -1 != -1 不再发生）
+
+    Args:
+        known_box_ids: [0, 8, -1]  (-1=未观察)
+        known_target_ids: [8, -1, 0]
+    Returns:
+        (box_ids, target_ids) 填满后的完整数组
+    """
+    n = len(known_box_ids)
+    box_ids = list(known_box_ids)
+    target_ids = list(known_target_ids)
+
+    matched_box = set()
+    matched_target = set()
+
+    # 1. 直接匹配
+    for i in range(n):
+        if box_ids[i] < 0:
+            continue
+        for j in range(n):
+            if target_ids[j] < 0:
+                continue
+            if box_ids[i] == target_ids[j] and j not in matched_target:
+                matched_box.add(i)
+                matched_target.add(j)
+                break
+
+    # 未观察的索引
+    unobs_box = [i for i in range(n) if box_ids[i] < 0]
+    unobs_target = [j for j in range(n) if target_ids[j] < 0]
+
+    # 已观察未匹配的
+    obs_unmatched_box = [i for i in range(n)
+                         if i not in matched_box and box_ids[i] >= 0]
+    obs_unmatched_target = [j for j in range(n)
+                            if j not in matched_target and target_ids[j] >= 0]
+
+    # 2. 已观察未匹配箱 → 配未观察目标
+    for bi in obs_unmatched_box:
+        if unobs_target:
+            tj = unobs_target.pop(0)
+            target_ids[tj] = box_ids[bi]
+            matched_box.add(bi)
+            matched_target.add(tj)
+
+    # 2. 已观察未匹配目标 → 配未观察箱
+    for tj in obs_unmatched_target:
+        if unobs_box:
+            bi = unobs_box.pop(0)
+            box_ids[bi] = target_ids[tj]
+            matched_box.add(bi)
+            matched_target.add(tj)
+
+    # 3. 双方都未观察 → 随便配（用递增临时值确保匹配，避免 -1==-1）
+    tmp_id = 100  # 临时值，不和真实ID(0-9)冲突
+    while unobs_box and unobs_target:
+        bi = unobs_box.pop(0)
+        tj = unobs_target.pop(0)
+        box_ids[bi] = tmp_id
+        target_ids[tj] = tmp_id
+        tmp_id += 1
+
+    return box_ids, target_ids
+
+
+def _build_raw_map(map_data):
+    """从 map_data 构建 c_solver 格式的 raw_map（12x16 char list）"""
+    from c_solver.constants import MAX_R, MAX_C
+
+    walls = map_data['walls']
+    boxes = set(map_data.get('boxes_start', map_data.get('boxes', [])))
+    goals = map_data['goals']
+    bombs = set(map_data.get('bombs', []))
+    car = map_data.get('car_start', map_data.get('car'))
+    width = map_data['width']
+    height = map_data['height']
+
+    raw_map = [[' '] * MAX_C for _ in range(MAX_R)]
+    for y in range(min(height, MAX_R)):
+        for x in range(min(width, MAX_C)):
+            pos = (x, y)
+            if pos in walls:
+                raw_map[y][x] = '#'
+            elif pos in boxes:
+                raw_map[y][x] = '$'
+            elif pos in goals:
+                raw_map[y][x] = '.'
+            elif pos in bombs:
+                raw_map[y][x] = '*'
+            elif car == pos:
+                raw_map[y][x] = '@'
+            elif pos in goals and car == pos:
+                raw_map[y][x] = '+'
+            else:
+                raw_map[y][x] = '-'
+    return raw_map
+
+
+# =============================================================================
+# free_move 斜线平滑（使用 AvoidanceGraph）
+# =============================================================================
+
+def _smooth_actions(actions, walls, box_positions, bomb_positions, width, height):
+    """
+    用 AvoidanceGraph.get_waypoints 替换 free_move 的 BFS 路点。
+    按爆炸时序逐步更新墙，爆炸前的 free_move 看不到后面的炸墙效果。
+    """
+    try:
+        from core.avoidance_graph import AvoidanceGraph
+
+        def _rebuild():
+            nonlocal ag, obs_active
+            obs_active = set(walls) | obj_set
+            ag = AvoidanceGraph(walls, width, height)
+            ag.set_objects(list(obj_set))
+
+        ag = AvoidanceGraph(walls, width, height)
+        car_pos = None
+        obj_set = set(box_positions) | set(bomb_positions)
+        obs_active = set(walls) | obj_set
+        ag.set_objects(list(obj_set))
+
+        # 炸弹位置追踪 {raw_index: (col, row)}，用于爆炸时清墙
+        bomb_dict = {i: bp for i, bp in enumerate(bomb_positions)}
+        _last_bomb_target = None  # fallback for wait wall clearing
+        n_boxes = len(box_positions)
+
+        for a in actions:
+            t = a['type']
+
+            if t == 'free_move':
+                wps = a.get('waypoints')
+                if not wps or len(wps) < 2:
+                    if car_pos is None and wps: car_pos = wps[-1]
+                    elif wps: car_pos = wps[-1]
+                    continue
+                target = wps[-1]
+                if car_pos is None: car_pos = wps[0]
+                start = car_pos
+                if start == target: car_pos = target; continue
+                obs = set(obs_active)
+                obs.discard(start); obs.discard(target)
+                new_wps = ag.get_waypoints(start, target, obs)
+                if new_wps and len(new_wps) >= 2:
+                    a['waypoints'] = new_wps
+                    a['target'] = new_wps[-1]
+                    car_pos = new_wps[-1]
+                else:
+                    car_pos = target
+
+            elif t == 'push_box':
+                m = a['push_meta']
+                obj_set.discard(tuple(m['box_start']))
+                obj_set.add(tuple(m['box_target']))
+                ag.set_objects(list(obj_set))
+                obs_active = set(walls) | obj_set
+                car_pos = a['target']
+
+            elif t == 'push_bomb':
+                m = a['push_meta']
+                obj_set.discard(tuple(m['bomb_start']))
+                obj_set.add(tuple(m['bomb_target']))
+                raw_idx = m['bomb_id'] - n_boxes
+                if 0 <= raw_idx < 3:
+                    bomb_dict[raw_idx] = tuple(m['bomb_target'])
+                # fallback：记录最近一次 push_bomb 的目标，wait 查不到 bomb_id 时用
+                _last_bomb_target = tuple(m['bomb_target'])
+                ag.set_objects(list(obj_set))
+                obs_active = set(walls) | obj_set
+                car_pos = a['target']
+
+            elif t == 'wait':
+                bomb_id = a.get('bomb_id', -1)
+                if bomb_id >= 0 and a.get('reason') == 'bomb_explosion':
+                    # 优先用 bomb_dict 追踪的位置，找不到用上次 push_bomb 目标
+                    if bomb_id in bomb_dict:
+                        bc, br = bomb_dict[bomb_id]
+                        del bomb_dict[bomb_id]
+                    elif _last_bomb_target is not None:
+                        bc, br = _last_bomb_target
+                    else:
+                        bc = br = None
+                    if bc is not None:
+                        for dr in (-1, 0, 1):
+                            for dc in (-1, 0, 1):
+                                wr, wc = br + dr, bc + dc
+                                if 0 < wr < height - 1 and 0 < wc < width - 1:
+                                    walls.discard((wc, wr))
+                        # 爆炸炸弹已消失，从软障碍集移除，避免后续 free_move 绕开空地
+                        obj_set.discard((bc, br))
+                    _rebuild()
+
+            elif t == 'observe':
+                car_pos = a['target']
+
+            elif t == 'end_of_phase1':
+                pass
+
+    except Exception:
+        pass
+    return actions
+
+
+# =============================================================================
+# Dijkstra P2 求解（顺路推）
+# =============================================================================
+
+def solve_phase2_dijkstra(p1_res, box_ids, target_ids, map_data, verbose=True):
+    """
+    使用 Dijkstra 微任务调度器求解 P2（支持跨箱交织顺路推）。
+
+    若 push_box_bfs 无法为某箱子找到路径（比 c_solver P2 A* 弱），
+    则自动回退到 c_solver 的 run_phase2。
+
+    Args:
+        p1_res: P1 PhaseResult
+        box_ids: 箱子 ID 数组
+        target_ids: 目标 ID 数组
+        map_data: 原始地图数据
+    Returns:
+        {'success': bool, 'actions': list, 'error': str|None}
+    """
+    import c_solver.track_port as tp
+    from algorithms.micro_scheduler import (
+        decompose_boxes, schedule_micro_tasks, generate_actions_from_schedule,
+    )
+    from core.map_preprocess import MapPreprocess
+    from core.avoidance_graph import AvoidanceGraph
+
+    t_start = __import__('time').perf_counter()
+
+    # 重建爆炸后墙体
+    walls = set(map_data['walls'])
+    width = map_data['width']
+    height = map_data['height']
+    boxes_start = list(map_data.get('boxes_start', map_data.get('boxes', [])))
+    goals_list = sorted(map_data['goals'], key=lambda p: (p[1], p[0]))  # 行优先，对齐c_solver dot_pos
+
+    for bi in range(tp.init_b_cnt):
+        br, bc = tp.g_best_bombs[bi]
+        for dr_off in (-1, 0, 1):
+            for dc_off in (-1, 0, 1):
+                wr, wc = br + dr_off, bc + dc_off
+                if 0 < wr < height - 1 and 0 < wc < width - 1:
+                    walls.discard((wc, wr))
+
+    # 消除法推理：填满 -1（未观察的ID）
+    resolved_box_ids, resolved_target_ids = _resolve_ids(box_ids, target_ids)
+    box_ids = resolved_box_ids
+    target_ids = resolved_target_ids
+
+    # 构建分配映射
+    n_boxes = len(boxes_start)
+    n_goals = len(goals_list)
+    assigned_goals = [None] * n_boxes
+    for i in range(n_boxes):
+        for j in range(n_goals):
+            if box_ids[i] == target_ids[j] and box_ids[i] != -1:
+                assigned_goals[i] = goals_list[j]
+                break
+        if assigned_goals[i] is None:
+            assigned_goals[i] = goals_list[i]
+
+    obstacles = set(walls)
+    preprocess = MapPreprocess(walls, width, height)
+
+    # 分解微任务
+    micro_tasks = decompose_boxes(
+        boxes_start, assigned_goals, walls, width, height, obstacles, preprocess,
+    )
+
+    if micro_tasks is not None:
+        car_start = (p1_res.end_px, 11 - p1_res.end_py)
+        schedule = schedule_micro_tasks(
+            micro_tasks, car_start, walls, width, height, boxes_start, preprocess,
+        )
+        if schedule is not None:
+            avoidance_graph = AvoidanceGraph(walls, width, height)
+            avoidance_graph.set_objects(boxes_start)
+            actions = generate_actions_from_schedule(
+                schedule, micro_tasks, car_start, walls, width, height, obstacles,
+                preprocess, avoidance_graph=avoidance_graph,
+            )
+            if actions is not None:
+                elapsed_ms = (__import__('time').perf_counter() - t_start) * 1000
+                if verbose:
+                    print(f"[Dijkstra P2] 求解成功: {len(actions)} 条, {elapsed_ms:.0f}ms")
+                _smooth_actions(actions, walls, boxes_start, [], width, height)
+                return {'success': True, 'actions': actions, 'error': None}
+
+    # === 回退：c_solver P2 + 斜线平滑 ===
+    if verbose:
+        print("[Dijkstra P2] 回退到 c_solver P2...")
+    from c_solver import run_phase2, PhaseResult
+    p2_res = PhaseResult()
+    ok = run_phase2(box_ids, target_ids, p2_res)
+    if not ok:
+        return {'success': False, 'actions': [], 'error': 'c_solver P2 无解'}
+
+    _smooth_actions(p2_res.structured_actions, walls, boxes_start, [], width, height)
+    elapsed_ms = (__import__('time').perf_counter() - t_start) * 1000
+    if verbose:
+        print(f"[c_solver P2] 求解成功: {len(p2_res.structured_actions)} 条, {elapsed_ms:.0f}ms")
+    return {'success': True, 'actions': p2_res.structured_actions, 'error': None}
+
+
+def _repair_schedule(info, refined, plans, schedule_pair_plans,
+                     generate_pair_plans, generate_actions, graph,
+                     unlock_by_pair=None, deadline=None):
+    """完整多对 schedule 失败时的修复: 给炸弹对换"放宽版解锁引爆中心",
+    用"完整多对 schedule + 生成 Action + 网格回验 3/3"当判据逐个试, 首个全过即返回
+    (schedule, new_plans).
+
+    设计要点(守红线 + 零回归):
+      - 仅在首发 schedule 返回 None 时由 solve() 调用, 已 OK 图永不进入。
+      - 判据是"完整多对 schedule + verify"(非单对, 非仅 schedule 非空):
+        其他对方案此刻已定(refined)是真实上下文; 实测 schedule 非空仍可能箱未到位
+        (如 map3(4) 的 (12,6) 中心 schedule 过但箱推不到 goal), 故必须叠加 verify。
+      - 候选来自 blast_select.find_unlock_centers_wide(放宽预筛), 不改常规预筛/分配,
+        故无硬编码坐标; 是"墙集大但可能唯一可调度"的通用解锁中心。
+      - 每个炸弹对候选数有限(≤6), 每次 gen+schedule+verify 实测 ~15-40ms,
+        失败图本身耗时近 0, 总修复时间远低于 500ms。
+    """
+    from algorithms.blast_select import find_unlock_centers_wide
+    from algorithms.path_search import push_box_bfs, push_bomb_bfs
+    import copy
+
+    pairs = refined['pairs']
+    walls = info['walls']; w, h = info['width'], info['height']
+    car0 = info['car']
+    boxes = list(info['boxes']); bombs = list(info['bombs'])
+    all_obs = walls | set(boxes) | set(bombs)
+    unlock_by_pair = unlock_by_pair or {}
+    attempts = 0  # 已实际执行的 gen+schedule+verify 次数(用于"首次必跑"豁免)
+
+    # 找出"用炸弹但当前墙非空格中心/可换"的对, 逐对尝试换中心
+    for pi, p in enumerate(pairs):
+        if attempts > 0 and deadline is not None and time.perf_counter() > deadline:
+            break  # 守红线: 已逼近预算上限, 放弃修复(本就是失败图, 早返回)
+        bp = p.get('bomb_plan')
+        if not p.get('uses_bomb') or not bp or bp.get('chain'):
+            continue
+        box, goal = p['box'], p['goal']
+        cur_wall = bp.get('wall')
+        wide = find_unlock_centers_wide(info, box, goal)
+        if not wide:
+            continue
+        # 常规预筛(WINS=3 截断)已暴露给 assignment 的中心 — 它们要么本就被选中导致
+        #   schedule 崩, 要么 R2 不优先, 重试价值低。放宽搜索的"新增"中心(被 WINS 截掉的
+        #   更大墙集, 如 map3(4) 空格 (11,9))才是修复关键, 故优先试新增中心 → 命中更快、
+        #   在 deadline 守护下结果确定(不会因机器负载在排到关键中心前被截断)。
+        normal_centers = {d['wall'] for d in unlock_by_pair.get((box, goal), [])}
+        # 候选中心去重, 排除当前已用中心
+        seen = set()
+        cand = []
+        for uc in wide:
+            c = uc['wall']
+            if c == cur_wall or c in seen:
+                continue
+            seen.add(c)
+            cand.append(uc)
+        cand.sort(key=lambda uc: uc['wall'] in normal_centers)  # 新增中心(False)排前
+        for uc in cand:
+            if attempts > 0 and deadline is not None and time.perf_counter() > deadline:
+                return None, plans  # 守红线: 逼近预算上限, 放弃(首次尝试豁免, 保证确定性)
+            center = uc['wall']
+            ucbomb = uc.get('bomb')
+            # 确认该炸弹能推达引爆中心(空格用 push_box_bfs, 墙格用 push_bomb_bfs)
+            if center in walls:
+                rr = push_bomb_bfs(ucbomb, center, walls, w, h,
+                                   (all_obs - walls) - {ucbomb}, car_start=car0)
+            else:
+                rr = push_box_bfs(ucbomb, center, walls, w, h,
+                                  (all_obs - walls) - {ucbomb}, initial_car_pos=car0)
+            if rr is None:
+                continue
+            # 构造候选 pairs(深拷贝避免污染), 换该对的 bomb_plan
+            trial_pairs = copy.deepcopy(pairs)
+            trial_pairs[pi]['bomb_plan'] = {
+                'bomb': ucbomb, 'wall': center,
+                'bomb_steps': rr[0], 'bomb_turns': 0, 'chain_depth': 1}
+            trial_pairs[pi]['uses_bomb'] = True
+            attempts += 1
+            try:
+                tplans = generate_pair_plans(info, trial_pairs)
+                tsched = schedule_pair_plans(
+                    tplans, car0, walls, w, h, boxes, bombs,
+                    avoidance_graph=graph)
+                if tsched is None:
+                    continue
+                tactions = generate_actions(
+                    tsched, tplans, car0, walls, w, h, boxes, bombs,
+                    avoidance_graph=graph)
+                if tactions is None:
+                    continue
+                ok, _msg = verify_actions(tactions, info)
+            except Exception:
+                continue
+            if ok:
+                return tsched, tplans
+
+    return None, plans
+
+
+def solve(map_data, verbose=True):
+    """完整求解流程"""
+    t_start = time.perf_counter()
+    info = scan_map(map_data)
+
+    # 步骤 2-3.5
+    conn = compare_connectivity(info)
+    ch = analyze_channels(info, conn['ideal']['regions'])
+    pp = preplan_blasts(info, conn, ch)
+
+    # 步骤 4: 分配
+    t4 = time.perf_counter()
+    alloc = solve_assignment(info, conn, ch, pp)
+    dt4 = (time.perf_counter() - t4) * 1000
+
+    # 步骤 5: 精评
+    t5 = time.perf_counter()
+    refined = refine_blast_points(info, alloc, conn, ch, pp)
+    dt5 = (time.perf_counter() - t5) * 1000
+
+    # 步骤 6: 路径
+    t6 = time.perf_counter()
+    plans = generate_pair_plans(info, refined['pairs'])
+    dt6 = (time.perf_counter() - t6) * 1000
+
+    # 预建规避节点图（步骤 7+8 共用）
+    graph = AvoidanceGraph(info['walls'], info['width'], info['height'])
+
+    # 步骤 7: 调度
+    t7 = time.perf_counter()
+    schedule = schedule_pair_plans(
+        plans, info['car'], info['walls'],
+        info['width'], info['height'],
+        info['boxes'], info['bombs'],
+        avoidance_graph=graph)
+
+    if schedule is None:
+        # 调度失败修复: 仅在此分支触发, 故对首发即成功的 20 张 OK 图零影响.
+        #   病根: 步4换挡判据是 R2(仅验箱可达), 看不到推弹/推箱的通道争用与时序;
+        #   某炸点 R2 过但完整多对 schedule 崩(如 map3(4) 的 (11,6))。
+        #   这里对炸弹对取"放宽版解锁引爆中心"(含被常规预筛 WINS 截断的更大墙集,
+        #   如 map3(4) 的空格 (11,9)), 用真正的"完整多对 schedule"作判据逐个试,
+        #   首个能调度的即采纳。无硬编码坐标, 通用规则。
+        schedule, plans = _repair_schedule(
+            info, refined, plans, schedule_pair_plans, generate_pair_plans,
+            generate_actions, graph,
+            unlock_by_pair=pp.get('unlock_by_pair', {}),
+            deadline=t_start + 0.43)
+    dt7 = (time.perf_counter() - t7) * 1000
+
+    if schedule is None:
+        return {'success': False, 'error': '调度失败'}
+
+    # 步骤 8: Action
+    t8 = time.perf_counter()
+    actions = generate_actions(
+        schedule, plans, info['car'],
+        info['walls'], info['width'], info['height'],
+        info['boxes'], info['bombs'],
+        avoidance_graph=graph)
+    dt8 = (time.perf_counter() - t8) * 1000
+
+    if actions is None:
+        return {'success': False, 'error': 'Action生成失败'}
+
+    total_ms = (time.perf_counter() - t_start) * 1000
+    stats = compute_action_stats(actions)
+
+    return {
+        'success': True,
+        'actions': actions,
+        'stats': stats,
+        'timing': {'total': total_ms, 'step4': dt4, 'step5': dt5,
+                   'step6': dt6, 'step7': dt7, 'step8': dt8},
+        'summary': refined['summary'],
+        # 从实际调度用的 plans 构建摘要(而非 refined['pairs']): _repair_schedule
+        #   修复时换了炸点只体现在返回的 plans 里, refined['pairs'] 仍是修复前的旧炸点,
+        #   直接用会让摘要显示 stale 的失败炸点(如 map3(4) 显示 (11,6) 而实际用了 (11,9))。
+        'pairs': [{'box': pl.box, 'goal': pl.goal, 'bomb': pl.bomb, 'wall': pl.wall}
+                  for pl in plans],
+    }
+
+
+# =============================================================================
+# 网格回放验证
+# =============================================================================
+
+def verify_actions(actions, map_data):
+    """在网格上逐步执行 Action，验证正确性。"""
+    walls = set(map_data['walls'])
+    boxes = list(map_data['boxes'])
+    bombs = list(map_data['bombs'])
+    goals = map_data['goals']
+    w, h = map_data['width'], map_data['height']
+    car = map_data['car']
+
+    cur_walls = set(walls)
+    box_pos = list(boxes)
+    bomb_pos = list(bombs)
+    bomb_alive = [True] * len(bombs)
+    car_pos = car
+    goals_hit = set()
+
+    # 预扫描每个 box 的最后一次 push_box 动作索引。
+    # 仅当箱子在它的最后一段推动后落在 goal 上才算"到达消失";
+    # 中途借道经过某目标格(去推下一段)不算完成。
+    last_push_step = {}
+    for si, act in enumerate(actions):
+        if act['type'] == 'push_box':
+            last_push_step[act['push_meta']['box_id']] = si
+
+    def walkable(pos, ignore_bomb=None):
+        x, y = pos
+        if not (0 <= x < w and 0 <= y < h):
+            return False
+        if pos in cur_walls:
+            return False
+        for i, bp in enumerate(box_pos):
+            # 到达目标的箱子置 None(已消失), 不再阻挡 — 与真实模拟器一致
+            if bp is not None and bp == pos:
+                return False
+        for i, bp in enumerate(bomb_pos):
+            if bomb_alive[i] and bp == pos and i != ignore_bomb:
+                return False
+        return True
+
+    for step, a in enumerate(actions):
+        t = a['type']
+
+        if t == 'free_move':
+            target = tuple(a['target'])
+            wps = a.get('waypoints', [])
+            if wps and len(wps) >= 2:
+                for wp in wps[1:]:
+                    wp = tuple(wp)
+                    if not walkable(wp):
+                        return False, f'step {step}: waypoint {wp} blocked'
+            if not walkable(target):
+                return False, f'step {step}: target {target} blocked'
+            car_pos = target
+
+        elif t == 'push_box':
+            m = a['push_meta']
+            bid = m['box_id']
+            start = tuple(m['box_start'])
+            target = tuple(m['box_target'])
+            pdir = m['push_dir']
+            dx, dy = {'UP': (0,-1), 'DOWN': (0,1), 'LEFT': (-1,0), 'RIGHT': (1,0)}[pdir]
+
+            if box_pos[bid] != start:
+                return False, f'step {step}: box[{bid}] at {box_pos[bid]}, expected {start}'
+
+            cur = start
+            end = target
+            steps_n = abs(end[0] - start[0]) + abs(end[1] - start[1])
+            for _ in range(steps_n):
+                nxt = (cur[0] + dx, cur[1] + dy)
+                car_stand = (cur[0] - dx, cur[1] - dy)
+                if car_pos != car_stand:
+                    return False, f'step {step}: car at {car_pos}, need {car_stand}'
+                if not walkable(nxt):
+                    return False, f'step {step}: push blocked at {nxt}'
+                car_pos = cur
+                cur = nxt
+            box_pos[bid] = end
+            # 仅当这是该箱最后一次推动且落在 goal 上才算到达消失;
+            # 中途借道经过目标格(还要继续推)不算完成。
+            if end in goals and step == last_push_step.get(bid):
+                goals_hit.add(bid)
+                box_pos[bid] = None  # 箱子到达目标即消失, 不再参与后续碰撞/借道
+
+        elif t == 'push_bomb':
+            m = a['push_meta']
+            bid = m['bomb_id'] - len(boxes)  # 去掉偏移恢复原始索引
+            start = tuple(m['bomb_start'])
+            target = tuple(m['bomb_target'])
+            wall_target = tuple(m['wall_target'])
+            pdir = m['push_dir']
+            dx, dy = {'UP': (0,-1), 'DOWN': (0,1), 'LEFT': (-1,0), 'RIGHT': (1,0)}[pdir]
+
+            if bomb_pos[bid] != start:
+                return False, f'step {step}: bomb[{bid}] at {bomb_pos[bid]}, expected {start}'
+
+            cur = start
+            end = target
+            steps_n = abs(end[0] - start[0]) + abs(end[1] - start[1])
+            for k in range(steps_n):
+                nxt = (cur[0] + dx, cur[1] + dy)
+                car_stand = (cur[0] - dx, cur[1] - dy)
+                if car_pos != car_stand:
+                    return False, f'step {step}: car at {car_pos}, need {car_stand}'
+                if k < steps_n - 1 and not walkable(nxt, ignore_bomb=bid):
+                    return False, f'step {step}: push_bomb blocked at {nxt}'
+                car_pos = cur
+                cur = nxt
+            bomb_pos[bid] = end
+
+        elif t == 'wait':
+            # 炸弹爆炸: 清除 3x3 墙体
+            # 优先用 action 自带的引爆元数据(支持空格引爆: 炸弹停在空格也能炸斜对角墙)
+            from core.map_analysis import get_walls_in_3x3
+            center = a.get('blast_center')
+            bid_off = a.get('bomb_id', -1)
+            if center is not None:
+                center = tuple(center)
+                cur_walls -= get_walls_in_3x3(center, cur_walls)
+                bid = bid_off - len(boxes) if bid_off is not None and bid_off >= 0 else -1
+                if 0 <= bid < len(bomb_alive):
+                    bomb_alive[bid] = False
+                    bomb_pos[bid] = (-1, -1)
+            else:
+                # 兼容旧格式(无 blast_center): 仅炸弹停墙格上才清墙
+                for i, bp in enumerate(bomb_pos):
+                    if bomb_alive[i] and bp in cur_walls:
+                        cur_walls -= get_walls_in_3x3(bp, cur_walls)
+                        bomb_alive[i] = False
+                        bomb_pos[i] = (-1, -1)
+                        break
+
+    # 验证
+    for i, bp in enumerate(box_pos):
+        # bp is None 表示该箱已到达目标消失(见 push_box 分支)
+        if bp is None:
+            continue
+        if bp not in goals:
+            return False, f'box[{i}] at {bp}, not on any goal {goals}'
+
+    return True, f'OK: {len(goals_hit)}/{len(goals)} goals, {len(actions)} actions'
+
+
+# =============================================================================
+# CLI
+# =============================================================================
+
+if __name__ == '__main__':
+    base = os.path.dirname(os.path.abspath(__file__))
+    default_map = os.path.join(base, 'maps_export', 'map0.txt')
+    map_file = sys.argv[1] if len(sys.argv) > 1 else default_map
+    print(f'Loading: {map_file}')
+    md = load_map_from_file(map_file)
+    info = scan_map(md)
+    print(f'Map: {info["counts"]["boxes"]} boxes, {info["counts"]["goals"]} goals, {info["counts"]["bombs"]} bombs')
+
+    result = solve(md)
+
+    if not result['success']:
+        print(f'FAILED: {result["error"]}')
+        sys.exit(1)
+
+    # Timing
+    t = result['timing']
+    print(f'\nTiming: total={t["total"]:.0f}ms (step4={t["step4"]:.0f} step5={t["step5"]:.0f} step6={t["step6"]:.0f} step7={t["step7"]:.0f} step8={t["step8"]:.0f})')
+
+    # Stats
+    s = result['stats']
+    print(f'Actions: {s["total_actions"]} total ({s["free_moves"]} free/{s["free_dist"]}步, '
+          f'{s["push_boxes"]} push_box/{s["box_dist"]}步, '
+          f'{s["push_bombs"]} push_bomb/{s["bomb_dist"]}步, '
+          f'{s["waits"]} wait)')
+    print(f'Distance: {s["total_dist"]} (free={s["free_dist"]} box={s["box_dist"]} bomb={s["bomb_dist"]})')
+
+    # Verify
+    ok, msg = verify_actions(result['actions'], info)
+    print(f'Verify: {msg}')
+
+    # Print actions
+    print(f'\n--- Action Sequence ({len(result["actions"])} steps) ---')
+    for i, a in enumerate(result['actions']):
+        t = a['type']
+        if t == 'free_move':
+            print(f'  {i:3d}. FREE_MOVE  -> {a["target"]}')
+        elif t == 'push_box':
+            m = a['push_meta']
+            print(f'  {i:3d}. PUSH_BOX[{m["box_id"]}]  {m["push_dir"]}  {m["box_start"]}->{m["box_target"]}')
+        elif t == 'push_bomb':
+            m = a['push_meta']
+            bid = m['bomb_id'] - len(info['boxes'])  # 去掉偏移
+            print(f'  {i:3d}. PUSH_BOMB[{bid}] {m["push_dir"]}  {m["bomb_start"]}->{m["bomb_target"]}  wall={m["wall_target"]}')
+        elif t == 'wait':
+            print(f'  {i:3d}. WAIT       ({a.get("reason","?")})')

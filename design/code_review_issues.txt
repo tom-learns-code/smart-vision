@@ -1,0 +1,565 @@
+================================================================================
+  项目代码审查报告 — 第四轮 (含前三轮累计)
+  项目: 上赛道智能车 (RT1064DVL6A / Keil MDK)
+  日期: 2026/06/14
+  范围: 协议层 + 算法层 + 中间层 + 控制层 全部 .c/.h 文件
+================================================================================
+
+============================================================
+✅ 三轮累计已修复 (14项)
+============================================================
+
+  第一轮 (10项):
+   1. device_init_flag 缺 volatile → blue.c:6, blue.h:42, main.h:14
+   2. target_linear_speed 减法无下限 → blue.c:142 添加 -2000.0f 下限
+   3. VP_DMA_BUF_SIZE 命名误导 → vision_parser.h:22 改为 VP_RX_BUF_SIZE
+   4. isr.h 不必要的 motion_control.h → 已移除
+   5. g_mission_error 写入但无读取 → 新增 mission_error_code(), 屏幕显示 "ME:"
+   6. avoidance_graph.c 空桩无说明 → 添加注释
+   7. motor_pwm_init() 顺序不一致 → 改为 C6, C8, C10
+   8. main.c 无用的 catch-up 代码 → 已移除
+   9. mm_to_grid 冗余 g<0 检查 → 已移除
+  10. mission_copy_vision_map 关中断大 memcpy → snapshot 双缓冲 + seqlock
+
+  第二轮 (3项):
+  11. back_forth_mode/speed 缺 volatile → debug_modes.c:20-21, debug_modes.h:24-25
+  12. main.h 多余头文件依赖 → 精简为仅 zf_common_headfile.h + 两个声明
+  13. seqlock publish 缺 __DSB() → vision_parser.c:40,42
+
+  第三轮 (1项):
+  14. seqlock read 无重试上限 → vision_parser.c:382,386,397 (3次重试)
+
+============================================================
+🔴 当前剩余问题 (第三轮遗留 + 第四轮新增)
+============================================================
+
+---- 遗留: blue.c 缺少 #include "motion_control.h" — 编译失败 ----
+  严重度: 🔴 严重 (阻断编译) | 轮次: 第三轮
+
+  涉及文件:
+    - blue.c:1-4 (当前 include 列表)
+    - motion_control.h (声明来源)
+
+  问题描述:
+    原代码中 blue.c 的 include 链为:
+      blue.c → isr.h → motion_control.h
+    依赖此间接链获取 motion_control.h 中的符号声明。
+
+    现在 isr.h 已清空且 blue.c 不再包含它, 导致以下 6 类符号全部未声明:
+
+      符号                            使用行号          来源
+      ------------------------------  --------------   ---------------
+      pit_count                       blue.c:55        motion_control.h
+      motor0/1/2_speed_pid            blue.c:16-18     motion_control.h
+                                      62-75, 108-120
+      motor0/1/2_position_pid         blue.c:20-22     motion_control.h
+                                      85-93, 131-138
+      position_reset()                blue.c:24        motion_control.h
+      p_set()                         blue.c:26-28     motion_control.h
+      target_linear_speed             blue.c:95-97     motion_control.h
+                                      141-142
+
+    这是 refactoring 过程中移除间接依赖链导致的问题。
+    isr.c / app_status.c / ai_tuner.c 均已各自添加了所需直接 include,
+    不存在同类问题。
+
+  修改建议:
+    在 blue.c 第4行后添加:
+      #include "motion_control.h"
+
+    完整 include 块变为:
+      #include "zf_common_headfile.h"
+      #include "blue.h"
+      #include "pid.h"
+      #include "motion_control.h"    // <-- 添加此行
+      #include "debug_modes.h"
+
+    完整 include 块变为:
+      #include "zf_common_headfile.h"
+      #include "blue.h"
+      #include "pid.h"
+      #include "motion_control.h"    // <-- 添加此行
+      #include "debug_modes.h"
+
+================================================================================
+  第四轮审查 — 中断安全 / 竞态条件 / 代码质量
+  日期: 2026/06/14
+  范围: 全项目 .c/.h (28个自定义源文件, ~4000行)
+================================================================================
+
+============================================================
+🔴 第四轮新增 — Critical (2项)
+============================================================
+
+---- C1. ai_tuner.c:238 — PID参数修改与ISR读取之间的竞态条件 ----
+  严重度: 🔴 Critical (运行时数据竞争)
+
+  涉及文件:
+    - ai_tuner.c:35-41  (ai_tuner_update_pid)
+    - ai_tuner.c:223-239 (ai_tuner_poll_command)
+    - blue.c:53-162      (bt_cmd_handler, SYNC_SPEED_PID / SYNC_POS_PID 宏)
+    - pid.c:33-64        (position_pid_update)
+    - motion_control.c:777-838 (motor_control_5ms, ISR上下文)
+
+  问题描述:
+    ai_tuner_poll_command() 在主循环(while(1))中运行, 调用链为:
+      main() → ai_tuner_poll_command() → ai_tuner_process_command()
+            → ai_tuner_update_pid()         // 修改 motor1_speed_pid.Kp/Ki/Kd
+            → reset_pid_state()             // 连续写入6个浮点字段
+
+    同时 PIT ISR (每5ms) 中:
+      PIT_IRQHandler() → motor_control_5ms()
+                       → 读取 motor0/1/2_speed_pid (Target, Actual)
+                       → position_pid_update(&motorX_speed_pid)  // 读写 Error0/1/Int/Out
+
+    ai_tuner_poll_command() 中 interrupt_global_disable() 仅保护了命令缓冲区拷贝
+    (ai_tuner_ready_buf → cmd), 未保护实际的PID更新操作。
+
+    同样问题存在于 bt_cmd_handler() 通过 SYNC_SPEED_PID() 宏同时修改三个轮子PID。
+
+  后果:
+    - Cortex-M7 单 float 读写是原子的, 但 reset_pid_state() 连续写6个 float
+    - ISR 可能在写 PID 参数到一半时触发, 读到: 新 Kp + 旧 Ki (不一致)
+    - 最严重情况: ISR 在 reset_pid_state() 写到一半时读取半初始化 PID 结构体,
+      导致一个控制周期内使用随机 Error0/ErrorInt/Out 值, 电机失控
+
+  修改建议:
+    方案A (最小改动): 在 ai_tuner_update_pid() 和 bt_cmd_handler() 的
+    PID修改代码周围添加临界区保护:
+      uint32 primask = interrupt_global_disable();
+      motor1_speed_pid.Kp = kp;
+      motor1_speed_pid.Ki = ki;
+      motor1_speed_pid.Kd = kd;
+      reset_pid_state(&motor1_speed_pid);
+      interrupt_global_enable(primask);
+
+    方案B (更安全): 使用双缓冲PID参数, ISR 在每次控制周期开始时检查并原子地
+    交换新旧参数集。避免在 ISR 热路径中使用关中断。
+
+---- C2. path_follower.c:278 — path_follower_load() 15KB memcpy 与 ISR 的数据竞争 ----
+  严重度: 🔴 Critical (运行时数据竞争)
+
+  涉及文件:
+    - main.c:172-188        (mission_try_start_from_map)
+    - path_follower.c:270-288 (path_follower_load)
+    - path_follower.c:237-268 (path_follower_update, ISR上下文)
+    - isr.c:24-32            (PIT_IRQHandler 调用顺序)
+
+  问题描述:
+    main.c mission_try_start_from_map() 中:
+      device_init_flag = 1;                           // 阻止电机输出
+      path_follower_load(&g_mission_output);          // memcpy 15KB!
+      device_init_flag = 0;                           // 允许ISR执行路径
+
+    path_follower_load() 内部:
+      memcpy(&g_output, output, sizeof(g_output));    // ~15KB, 可能跨多个5ms周期
+      enter_current_action();                          // 设置 g_state
+
+    而 PIT ISR 中 path_follower_update() 在 motor_control_5ms() 之前执行:
+      PIT_IRQHandler():
+        vision_parser_update();    // ← 正常
+        path_follower_update();    // ← 读取 g_output, 可能与主循环 memcpy 冲突!
+        motor_control_5ms();       // ← 检查 device_init_flag, 若=1则return
+
+    虽然 device_init_flag=1 保证 motor_control_5ms() 不驱动电机, 但
+    path_follower_update() 不检查此标志, 会直接读取 g_output 并修改
+    g_state / g_sub_state / g_action_idx 等内部状态。
+
+  后果:
+    - memcpy 15KB 在 600MHz 下约需数十微秒, 小于5ms, 现实触发概率较低
+    - 但如果其他中断(如CSI camera)抢占, memcpy 可能被推迟, 超过5ms窗口
+    - ISR 读到半拷贝的 g_output → 部分 action 有效, 部分为全零
+    - g_state 可能被 ISR 改为 FOLLOWER_STUCK, 导致主循环的后续逻辑混乱
+
+  修改建议:
+    方案A: 在 path_follower_load() 的 memcpy 周围加临界区:
+      uint32 primask = interrupt_global_disable();
+      memcpy(&g_output, output, sizeof(g_output));
+      g_action_idx = 0;
+      enter_current_action();
+      interrupt_global_enable(primask);
+
+    方案B: 添加一个 atomic 标志, ISR 中 path_follower_update() 在标志为1时
+    跳过执行:
+      // main.c
+      g_path_loading = 1;
+      path_follower_load(&g_mission_output);
+      g_path_loading = 0;
+      device_init_flag = 0;
+
+      // isr.c path_follower_update() 开头:
+      if(g_path_loading) return;
+
+============================================================
+🟠 第四轮新增 — High (5项)
+============================================================
+
+---- H1. blue.c:53 — 蓝牙PID修改可能被PIT ISR抢占 ----
+  严重度: 🟠 High
+
+  涉及文件:
+    - blue.c:53-162 (bt_cmd_handler, SYNC_SPEED_PID/SYNC_POS_PID 宏)
+    - blue.c:32-40 (SYNC_SPEED_PID 宏定义)
+    - blue.c:42-50 (SYNC_POS_PID 宏定义)
+
+  问题描述:
+    SYNC_SPEED_PID() 宏展开为6次 float 赋值(motor1/2 各 Kp/Ki/Kd)。
+    若 bt_cmd_handler() 在 GPIO ISR 中执行(GPIO1_Combined_16_31_IRQHandler
+    → wireless_module_spi_handler → bt_cmd_handler), 且 GPIO ISR 优先级
+    低于 PIT ISR, PIT ISR 可能在 SYNC_SPEED_PID() 执行到一半时抢占。
+
+    motor2_speed_pid 手工设了不同的 Kp(20 vs 18), SYNC 后会覆盖为与 motor0
+    相同。若 ISR 在 SYNC 半途读取, 可能 motor1 用了新值而 motor2 用了旧值。
+
+  修改建议:
+    在 bt_cmd_handler() 函数入口和出口加 interrupt_global_disable/enable,
+    或确认 GPIO ISR 优先级高于 PIT ISR。
+
+---- H2. vision_parser.c:49 — 环形缓冲区仅留1字节空闲余量 ----
+  严重度: 🟠 High
+
+  涉及文件:
+    - vision_parser.c:46-54 (vision_parser_rx_handler, ISR上下文)
+    - vision_parser.c:316-337 (vision_parser_update, ISR上下文)
+    - vision_parser.h:22 (VP_RX_BUF_SIZE = 512U)
+
+  问题描述:
+    环形缓冲区写指针检查:
+      uint16 next = (uint16)((rx_write_idx + 1U) & (VP_RX_BUF_SIZE - 1U));
+      if(next != rx_read_idx) { ... }  // 仅当 next==read 时丢弃, 浪费1字节
+
+    实际可用空间: 511字节 (512 - 1)
+    115200波特率下5ms产生: 115200/10/200 ≈ 57.6字节
+    vision_parser_update() 每5ms消费: 最多64字节
+
+    正常情况下 64 > 57.6, 刚好够用。但以下场景可能导致溢出:
+    - UART 帧间间隔不均匀, 短时突发 > 511字节
+    - 更高波特率(如调试时可能改为921600)
+    - 未来在 vision_parser_update() 中添加耗时操作, 减少每周期消费量
+
+  修改建议:
+    方案A: VP_RX_BUF_SIZE 改为 1024U (必须是2的幂), 留更多余量
+    方案B: 在 rx_handler 中添加溢出计数器, 便于运行时诊断
+
+---- H3. solver.c:311 — 静态 map_preprocess_t 包含36KB distances 数组 ----
+  严重度: 🟠 High (架构/内存)
+
+  涉及文件:
+    - solver.c:311 (static map_preprocess_t pp)
+    - solver.c:55-132 (preprocess_init, 对192格全源BFS)
+    - solver.h:124-130 (map_preprocess_t 定义, distances[192][192])
+
+  问题描述:
+    map_preprocess_t.distances[MAP_CELLS][MAP_CELLS] = 192 * 192 = 36,864字节
+    在 DTCM (448KB) 的 BSS 段中。preprocess_init() 对每个非墙格子做全图BFS,
+    复杂度 O(V * (V+E)) ≈ O(192 * 192) = O(36,864) 次节点扩展。
+
+    在 600MHz Cortex-M7 上估计耗时 5-15ms (取决于墙密度)。
+    该函数在 solve() 中每次被调用, solve() 在主循环中运行。
+    如果 solve() 执行超过5ms, PIT ISR 可以抢占——由于 solve 是纯计算
+    (不涉及电机控制共享状态), 实际风险较低。但如果有其他中断(CSI camera)
+    在 solve 期间大量触发, 可能导致 solve 进一步延迟。
+
+  目前安全, 但需要关注:
+    - 192*192 的 uint8 距离意味着最大距离254(255=不可达), 够用
+    - 未来若增大 MAP_MAX_W / MAP_MAX_H, 内存呈平方增长
+
+  修改建议:
+    暂不修改, 但在地图尺寸增大前需要评估 DTCM 余量。
+
+---- H4. push_bfs.c:206-210 — blocked[] 参数无边界检查 ----
+  严重度: 🟠 High (潜在数组越界)
+
+  涉及文件:
+    - push_bfs.c:206-210 (blocked 检查)
+    - solver.c:341 (调用时传入 0/NULL)
+    - micro_scheduler.c: (调用时传入 NULL? 未找到传入非NULL的调用点)
+
+  问题描述:
+    if(blocked) {
+        uint16 block_key = ((uint16)cur.y * MAP_MAX_W + cur.x) * 4 + d;
+        if(blocked[block_key]) continue;
+    }
+
+    block_key 最大值为 (15*16+15)*4+3 = 1039。调用者需保证 blocked 数组
+    至少 1040 字节。但:
+    - 函数签名无 blocked 数组大小的参数
+    - 无文档说明所需大小
+    - 目前所有调用点均传 NULL/0, 此路径从未执行
+
+  修改建议:
+    - 添加注释说明 blocked 数组最小尺寸: (MAP_MAX_W * MAP_MAX_H * 4) 字节
+    - 或添加 assert(block_key < BLOCKED_SIZE)
+    - 或将 blocked_size 作为参数传入
+
+---- H5. motion_control.c:777 — ISR中大量FPU操作, 需确认FPU上下文保存 ----
+  严重度: 🟠 High (配置相关)
+
+  涉及文件:
+    - motion_control.c:306-353 (odometry_update: cosf, sinf, atan2f, sqrtf)
+    - motion_control.c:406-438 (imu963ra_heading_update: 浮点运算)
+    - motion_control.c:504-511 (k_calculate: cosf)
+    - isr.c:24-32 (PIT_IRQHandler → motor_control_5ms 调用链)
+
+  问题描述:
+    motor_control_5ms() 在 PIT ISR 中执行, 调用链包含大量 FPU 指令
+    (cosf, sinf, atan2f, sqrtf)。Cortex-M7 有硬件 FPU (FPv5), 但:
+    - FPU 寄存器 (S0-S31) 共32个, 在 ISR 进入/退出时需要保存/恢复
+    - 如果 FPU lazy stacking 未正确配置 (SCB->CCR 或 FPCCR),
+      ISR 中的 FPU 操作可能破坏主循环的浮点计算上下文
+
+    Keil MDK 默认 startup 通常配置了 lazy stacking, 但需要确认。
+
+  修改建议:
+    检查 startup_mimxrt1064.s 中是否包含 FPU 使能代码:
+      - SCB->CPACR |= (0xF << 20)  // CP10/CP11 full access
+      - FPU->FPCCR  lazy stacking 配置
+    若未配置, 添加 FPU 初始化。当前 0 Error 0 Warning 编译通过说明
+    至少链接没问题, 但运行时 FPU 状态可能有问题。
+
+============================================================
+🟡 第四轮新增 — Medium (6项)
+============================================================
+
+---- M1. path_follower.c:200 — 浮点距离累加误差 ----
+  严重度: 🟡 Medium
+
+  涉及文件: path_follower.c:200 (update_pushing)
+  问题描述:
+    g_push_dist_done_mm += spd * 0.005f;
+    每次 ISR (5ms) 累加。长推箱子段可能持续数秒(数百个5ms周期),
+    浮点累加误差会逐渐累积。虽然后面有 +50.0f 过冲容差, 但误差
+    可能导致提前或延后结束推箱子动作。
+
+  修改建议:
+    改用编码器脉冲计数(整数)代替浮点累加:
+      g_push_pulses_done += abs(encoder_speed[0]+encoder_speed[1]+encoder_speed[2]);
+      判断: g_push_pulses_done >= g_push_pulses_target
+
+---- M2. avoidance_graph.c:10-50 — 整个模块为桩代码 ----
+  严重度: 🟡 Medium
+
+  涉及文件:
+    - avoidance_graph.c (全部3个函数返回0/空)
+    - micro_scheduler.c:397-399 (调用 avoidance_graph_get_waypoints, 始终返回0)
+    - avoidance_graph.h (接口声明完整但无实现)
+
+  问题描述:
+    三个函数 find_avoidance_nodes / check_safe_connection /
+    avoidance_graph_get_waypoints 均将所有参数标记 (void) 并返回0。
+    micro_scheduler.c 调用后 fallback 到 car_bfs_path(), 功能正常。
+    但桩代码的存在增加了维护负担, 且接口定义完整(avoidance_graph.h)
+    容易让人误以为功能已实现。
+
+  修改建议:
+    要么实现避障图逻辑, 要么暂时移除 avoid_graph 模块, 直接在
+    micro_scheduler.c 中调用 car_bfs_path()。注释说"intentionally disabled"
+    说明是主动选择, 但应设定明确的启用计划。
+
+---- M3. vision_parser.c:377-407 — seqlock 临界区保护了错误的部分 ----
+  严重度: 🟡 Medium
+
+  涉及文件: vision_parser.c:377-407 (vision_take_full_map_snapshot)
+
+  问题描述:
+    // 第392行: memcpy 在临界区外执行
+    memcpy(out, &g_full_map_snapshot, sizeof(*out));  // 未保护
+
+    // 第399行: 临界区仅保护标志清除
+    primask = interrupt_global_disable();
+    g_full_map_ready = 0;
+    interrupt_global_enable(primask);
+
+    实际安全性来自 seqlock (g_full_map_snapshot_seq 奇偶校验), 而非临界区。
+    所以功能正确, 但代码结构容易误导审查者。memcpy 应该放在临界区内,
+    或者移除多余的中断关闭(因为 seqlock 已经保证了数据一致性)。
+
+  修改建议:
+    移除 interrupt_global_disable/enable, 仅依赖 seqlock 或
+    将 memcpy 移入临界区内。两者选一, 不要混用两种保护机制。
+
+---- M4. isr.c:15-16 — 全局变量 run_flag / control_state 从未使用 ----
+  严重度: 🟡 Medium
+
+  涉及文件: isr.c:15-16
+  问题描述:
+    unsigned char run_flag = 0;       // 链遍所有文件, 无 extern 引用, 无本文件读取
+    int control_state = 0;            // 同上
+
+    占用 BSS 段 5 字节。代码中使用的启停标志是 blue.c 的 device_init_flag。
+
+  修改建议:
+    删除这两个变量。如需保留作为预留, 添加注释说明用途并标记 __attribute__((unused))。
+
+---- M5. debug_modes.c:28-77 — 大量注释掉的圆轨迹代码 ----
+  严重度: 🟡 Medium
+
+  涉及文件:
+    - debug_modes.c:28-77 (#if CIRCLE_MODE_ENABLE, 当前为0U)
+    - debug_modes.h:14-18 (CIRCLE_MODE_ENABLE = 0U)
+
+  问题描述:
+    circle_mode_update() 的完整实现(约50行)全部被注释掉, 且被
+    #if CIRCLE_MODE_ENABLE 保护, 该宏定义为 0U。形成双重死代码。
+
+  修改建议:
+    保留 #if 保护即可, 删除注释掉的代码块(约50行注释)。
+    如需恢复, 可从 git 历史中找回。
+
+---- M6. hungarian.c:19-22 — 不必要的输入矩阵深拷贝 ----
+  严重度: 🟡 Medium
+
+  涉及文件: hungarian.c:14-22 (cost_mat 静态数组, 拷贝循环)
+  问题描述:
+    static int32 cost_mat[HUNGARIAN_N][HUNGARIAN_N];  // 4x4 = 64字节静态
+    for(int i=0; i<n; i++)
+        for(int j=0; j<n; j++)
+            cost_mat[i][j] = cost[i][j];  // 完全拷贝, 原数组未被修改
+
+    cost[][] 参数是 const 语义(虽未加 const 限定符), 算法不修改它。
+    直接使用 cost[i][j] 即可, 无需拷贝到 cost_mat。
+
+  修改建议:
+    移除 cost_mat 静态数组, 直接使用 cost[i][j] 访问。节省64字节BSS,
+    减少 O(n²) 不必要的拷贝。
+
+============================================================
+🔵 第四轮新增 — Low (4项)
+============================================================
+
+---- L1. 多处魔法数字未使用命名常量 ----
+  严重度: 🔵 Low
+
+  涉及文件:
+    - motion_control.c:524-525 (10000 = PWM最大占空比)
+    - motion_control.c:714 (2000.0f = 速度限制, 已有 clamp 但值硬编码)
+    - vision_parser.c:321 (64U = 每5ms最大处理字节数)
+    - path_follower.c:200 (0.005f = 控制周期, 应为 CONTROL_PERIOD_S)
+
+  修改建议:
+    将重复出现的魔法数字提取为 #define 或 enum 常量,
+    统一在对应头文件中定义。
+
+---- L2. solver.c:324 — if(map == 0) 应使用 NULL ----
+  严重度: 🔵 Low
+
+  涉及文件: solver.c:324
+  问题描述:
+    if(map == 0) return out;  // map 是 map_input_t* 指针
+    虽然 C 标准允许 0 作为空指针常量, 但 NULL 更清晰。
+
+  修改建议:
+    if(map == NULL) return out;
+
+---- L3. vofa.c:77-79 — 帧尾常量每次调用重新赋值 ----
+  严重度: 🔵 Low
+
+  涉及文件: vofa.c:76-79 (JustFloat_Send)
+  问题描述:
+    JF_Data.tail[0] = 0x00;
+    JF_Data.tail[1] = 0x00;
+    JF_Data.tail[2] = 0x80;
+    JF_Data.tail[3] = 0x7f;
+    每次 JustFloat_Send() 调用都重新赋值, 值从不改变。
+
+  修改建议:
+    在初始化时赋值一次, 或直接用 const 数组:
+      static const uint8 JF_TAIL[4] = {0x00, 0x00, 0x80, 0x7f};
+      memcpy(JF_Data.tail, JF_TAIL, 4);  // init 中调用一次
+
+---- L4. micro_scheduler.c:46 — 重复的 dir_names 字符串 ----
+  严重度: 🔵 Low
+
+  涉及文件:
+    - micro_scheduler.c:46 (static const char *dir_names[4] = {"UP","DOWN","LEFT","RIGHT"})
+    - solver.h:75-78 (PUSH_DIR_UP/DOWN/LEFT/RIGHT 宏定义为字符串字面量)
+
+  问题描述:
+    方向名称字符串在 micro_scheduler.c 和 solver.h 中各定义一次。
+    若方向名称需要修改, 容易遗漏一处。
+
+  修改建议:
+    统一使用 solver.h 中的 PUSH_DIR_* 宏,
+    micro_scheduler.c 中删除 dir_names 数组。
+
+============================================================
+🔧 第四轮 — 架构观察 (非问题, 供参考)
+============================================================
+
+---- O1. 中断优先级未显式配置 ----
+  PIT ISR (5ms 控制核心) 应具有最高优先级。
+  UART ISR / GPIO ISR 应具有较低优先级。
+  代码中未见显式 NVIC_SetPriority() 调用, 依赖 SDK 默认值。
+  建议: 显式配置各中断优先级并文档化。
+
+---- O2. DTCM 内存占用估算 ----
+  静态分配          大小      位置
+  --------------    ------    ----
+  pp.distances      36,864B   solver.c BSS
+  sched_heap        20,480B   micro_scheduler.c BSS
+  g_output          14,592B   path_follower.c BSS
+  best_keys+vals    12,288B   micro_scheduler.c BSS
+  best_table         3,840B   push_bfs.c BSS
+  path_table         8,192B   push_bfs.c BSS
+  其他小数组          ~2,000B  各文件 BSS
+  ─────────────────
+  合计              ~98KB     / 448KB DTCM
+
+  剩余约 350KB 用于: 栈(8KB), 堆(1KB), SDK/USB/网络缓冲, 余量充足。
+
+---- O3. 编译配置 ----
+  ARM Compiler 6.16, 当前 0 Error 0 Warning。
+  建议开发阶段加 -Wall -Wextra 捕获隐式类型转换等问题。
+
+============================================================
+📊 各文件 include 依赖验证
+============================================================
+
+  文件             直接include的关键头文件              状态
+  ----             ------------------------------       ----
+  isr.c            motion_control, path_follower,       ✅ 完整
+                   vision_parser, ai_tuner, main.h
+  main.c           motion_control, solver,              ✅ 完整
+                   vision_parser, path_follower,
+                   ai_tuner, app_status, blue, main.h
+  blue.c           pid, debug_modes                     🔴 缺 motion_control.h
+  motion_control.c pid, blue, debug_modes               ✅ 完整
+  app_status.c     motion_control, vofa,                ✅ 完整
+                   debug_modes, main.h
+  ai_tuner.c       motion_control, pid                  ✅ 完整
+  vision_parser.c  motion_control                       ✅ 完整
+  path_follower.c  solver, vision_parser,               ✅ 完整
+                   motion_control
+  solver.c         (无, 仅 solver.h)                     ✅ 完整
+  pid.c            (无, 仅 pid.h)                        ✅ 完整
+
+============================================================
+📊 最终统计
+============================================================
+
+  轮次      新增  累积修复  说明
+  ------    ----  -------  ----
+  第一轮    14    10       初始审查: volatile/缓冲区/include/snapshot
+  第二轮     5     3       back_forth volatile / main.h 清理 / seqlock增强
+  第三轮     1     1       blue.c 缺 motion_control.h
+  第四轮    17     0       中断安全/竞态条件/代码质量 (本轮全新)
+
+  当前剩余: 18 项
+
+  按严重度:
+    🔴 Critical:  3  (第三轮1项 + 第四轮2项)
+    🟠 High:      5  (第四轮全部5项)
+    🟡 Medium:    6  (第四轮全部6项)
+    🔵 Low:       4  (第四轮全部4项)
+
+  第四轮问题优先级:
+    1. C1 — PID 参数修改竞态 (最危险, 可能导致电机失控)
+    2. C2 — path_follower_load memcpy 竞争
+    3. H1 — 蓝牙 PID 修改可能被抢占
+    4. H2 — 环形缓冲区余量不足
+    5. H5 — 确认 FPU 上下文保存配置
+    6. 其余 High/Medium/Low — 按需逐步修复
+
+============================================================
+  审查完成
+================================================================================

@@ -1,0 +1,284 @@
+{
+  "started_at": "2026-07-18 09:04:02",
+  "results": [
+    {
+      "map": "map0.txt",
+      "status": "PASS",
+      "p1_seconds": 73.465,
+      "p1_raw_steps": 67,
+      "p1_structured_actions": 34,
+      "observed_boxes": [
+        0,
+        2
+      ],
+      "observed_targets": [
+        0,
+        1
+      ],
+      "assignments_tested": 6,
+      "max_p2_seconds": 0.112,
+      "total_seconds": 74.097
+    },
+    {
+      "map": "map1(1).txt",
+      "status": "PASS",
+      "p1_seconds": 0.094,
+      "p1_raw_steps": 10,
+      "p1_structured_actions": 9,
+      "observed_boxes": [],
+      "observed_targets": [],
+      "assignments_tested": 1,
+      "max_p2_seconds": 0.028,
+      "total_seconds": 0.131
+    },
+    {
+      "map": "map1(4).txt",
+      "status": "PASS",
+      "p1_seconds": 45.834,
+      "p1_raw_steps": 25,
+      "p1_structured_actions": 18,
+      "observed_boxes": [
+        1,
+        2
+      ],
+      "observed_targets": [
+        0,
+        1
+      ],
+      "assignments_tested": 6,
+      "max_p2_seconds": 0.156,
+      "total_seconds": 46.619
+    },
+    {
+      "map": "map2(1).txt",
+      "status": "PASS",
+      "p1_seconds": 3.684,
+      "p1_raw_steps": 17,
+      "p1_structured_actions": 14,
+      "observed_boxes": [
+        0
+      ],
+      "observed_targets": [
+        0
+      ],
+      "assignments_tested": 2,
+      "max_p2_seconds": 0.044,
+      "total_seconds": 3.773
+    },
+    {
+      "map": "map2(4).txt",
+      "status": "PASS",
+      "p1_seconds": 142.866,
+      "p1_raw_steps": 35,
+      "p1_structured_actions": 20,
+      "observed_boxes": [
+        0,
+        1
+      ],
+      "observed_targets": [
+        1,
+        2
+      ],
+      "assignments_tested": 6,
+      "max_p2_seconds": 0.119,
+      "total_seconds": 143.497
+    },
+    {
+      "map": "map3(1).txt",
+      "status": "PASS",
+      "p1_seconds": 8.251,
+      "p1_raw_steps": 32,
+      "p1_structured_actions": 20,
+      "observed_boxes": [
+        1,
+        2
+      ],
+      "observed_targets": [
+        0,
+        1
+      ],
+      "assignments_tested": 6,
+      "max_p2_seconds": 0.059,
+      "total_seconds": 8.578
+    },
+    {
+      "map": "map3(4).txt",
+      "status": "PASS",
+      "p1_seconds": 77.271,
+      "p1_raw_steps": 50,
+      "p1_structured_actions": 33,
+      "observed_boxes": [
+        0,
+        1
+      ],
+      "observed_targets": [
+        0,
+        1
+      ],
+      "assignments_tested": 6,
+      "max_p2_seconds": 0.107,
+      "total_seconds": 77.875
+    },
+    {
+      "map": "map4(1).txt",
+      "status": "PASS",
+      "p1_seconds": 6.037,
+      "p1_raw_steps": 20,
+      "p1_structured_actions": 17,
+      "observed_boxes": [
+        0,
+        1
+      ],
+      "observed_targets": [
+        0,
+        1
+      ],
+      "assignments_tested": 6,
+      "max_p2_seconds": 0.063,
+      "total_seconds": 6.379
+    },
+    {
+      "map": "map4(4).txt",
+      "status": "PASS",
+      "p1_seconds": 43.039,
+      "p1_raw_steps": 24,
+      "p1_structured_actions": 19,
+      "observed_boxes": [
+        1,
+        2
+      ],
+      "observed_targets": [
+        1,
+        2
+      ],
+      "assignments_tested": 6,
+      "max_p2_seconds": 0.116,
+      "total_seconds": 43.629
+    },
+    {
+      "map": "map5(1).txt",
+      "status": "PASS",
+      "p1_seconds": 4.549,
+      "p1_raw_steps": 18,
+      "p1_structured_actions": 14,
+      "observed_boxes": [
+        0
+      ],
+      "observed_targets": [
+        0
+      ],
+      "assignments_tested": 2,
+      "max_p2_seconds": 0.044,
+      "total_seconds": 4.64
+    },
+    {
+      "map": "map5(4).txt",
+      "status": "PASS",
+      "p1_seconds": 11.056,
+      "p1_raw_steps": 34,
+      "p1_structured_actions": 18,
+      "observed_boxes": [
+        0,
+        1
+      ],
+      "observed_targets": [
+        0,
+        2
+      ],
+      "assignments_tested": 6,
+      "max_p2_seconds": 0.155,
+      "total_seconds": 11.894
+    },
+    {
+      "map": "map6.txt",
+      "status": "PASS",
+      "p1_seconds": 0.411,
+      "p1_raw_steps": 16,
+      "p1_structured_actions": 8,
+      "observed_boxes": [
+        0
+      ],
+      "observed_targets": [
+        0
+      ],
+      "assignments_tested": 2,
+      "max_p2_seconds": 0.103,
+      "total_seconds": 0.609
+    },
+    {
+      "map": "map8.txt",
+      "status": "PASS",
+      "p1_seconds": 40.138,
+      "p1_raw_steps": 46,
+      "p1_structured_actions": 34,
+      "observed_boxes": [
+        0,
+        2
+      ],
+      "observed_targets": [
+        0,
+        1
+      ],
+      "assignments_tested": 6,
+      "max_p2_seconds": 0.106,
+      "total_seconds": 40.746
+    },
+    {
+      "map": "map9.txt",
+      "status": "PASS",
+      "p1_seconds": 0.343,
+      "p1_raw_steps": 27,
+      "p1_structured_actions": 9,
+      "observed_boxes": [
+        0,
+        2
+      ],
+      "observed_targets": [
+        0,
+        1
+      ],
+      "assignments_tested": 6,
+      "max_p2_seconds": 0.286,
+      "total_seconds": 1.536
+    },
+    {
+      "map": "map10.txt",
+      "status": "PASS",
+      "p1_seconds": 28.97,
+      "p1_raw_steps": 60,
+      "p1_structured_actions": 30,
+      "observed_boxes": [
+        0,
+        2
+      ],
+      "observed_targets": [
+        0,
+        1
+      ],
+      "assignments_tested": 6,
+      "max_p2_seconds": 0.143,
+      "total_seconds": 29.679
+    },
+    {
+      "map": "map11.txt",
+      "status": "PASS",
+      "p1_seconds": 13.73,
+      "p1_raw_steps": 53,
+      "p1_structured_actions": 32,
+      "observed_boxes": [
+        1,
+        2
+      ],
+      "observed_targets": [
+        0,
+        1
+      ],
+      "assignments_tested": 6,
+      "max_p2_seconds": 0.093,
+      "total_seconds": 14.276
+    }
+  ],
+  "finished_at": "2026-07-18 09:12:30",
+  "passed": 16,
+  "failed": 0
+}

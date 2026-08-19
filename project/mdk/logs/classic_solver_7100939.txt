@@ -1,0 +1,19 @@
+﻿PASS map0.txt       free=  0 push= 0 fallback=0
+PASS map1(1).txt    free= 10 push=18 fallback=0
+PASS map10(2).txt   free= 48 push=18 fallback=0
+PASS map11(3).txt   free=  6 push=19 fallback=0
+PASS map12(2).txt   free= 11 push=19 fallback=0
+PASS map13(3).txt   free= 39 push=18 fallback=0
+PASS map14(3).txt   free= 27 push=18 fallback=0
+PASS map15(3).txt   free= 48 push=20 fallback=0
+PASS map2(3).txt    free= 40 push=16 fallback=0
+PASS map2.txt       free= 23 push= 7 fallback=1
+PASS map3(3).txt    free= 23 push=18 fallback=0
+PASS map4(3).txt    free= 72 push=21 fallback=0
+PASS map5(2).txt    free= 23 push=21 fallback=0
+PASS map6(3).txt    free= 14 push=13 fallback=0
+PASS map7(2).txt    free= 36 push=15 fallback=0
+PASS map8(3).txt    free= 18 push=15 fallback=0
+PASS map9(3).txt    free= 44 push=20 fallback=0
+PASS map2.txt@2,7   free= 23 push= 7 fallback=1
+SUMMARY pass=18/18 grid4=1 semantic_replay=1

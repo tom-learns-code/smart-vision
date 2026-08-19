@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Whip Overlay</string>
+    <string name="main_subtitle">A floating Android companion for playful "move faster" taps.</string>
+    <string name="permissions_title">Permission status</string>
+    <string name="overlay_status_label">Overlay permission</string>
+    <string name="service_status_label">Overlay service</string>
+    <string name="actions_title">Actions</string>
+    <string name="how_to_use_title">How to use</string>
+    <string name="how_to_use_body">Grant overlay permission, start the overlay, then switch to Doubao. The floating bubble can be dragged anywhere and tapped for haptic feedback and a quick "speed up" message. This first version does not automate another app yet.</string>
+    <string name="request_overlay">Grant overlay permission</string>
+    <string name="start_overlay">Start overlay</string>
+    <string name="stop_overlay">Stop overlay</string>
+    <string name="status_ready">Ready</string>
+    <string name="status_missing">Missing</string>
+    <string name="status_running">Running</string>
+    <string name="status_idle">Idle</string>
+    <string name="tip_initial">Tip: the first launch is easiest if you keep this screen open until the overlay appears.</string>
+    <string name="tip_need_overlay">Overlay permission is required before the bubble can float above Doubao.</string>
+    <string name="tip_started">Overlay started. Switch to Doubao and tap the bubble when it gets too philosophical.</string>
+    <string name="tip_stopped">Overlay stopped.</string>
+    <string name="notification_title">Whip Overlay is active</string>
+    <string name="notification_body">The floating bubble is ready on top of other apps.</string>
+    <string name="overlay_button_title">WHIP</string>
+    <string name="overlay_idle_phrase">Tap when the reply is taking forever.</string>
+    <string name="strike_count_format">Strikes: %1$d</string>
+    <string name="strike_count_zero">Strikes: 0</string>
+    <string name="close_mark">X</string>
+</resources>

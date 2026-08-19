@@ -1,0 +1,10 @@
+map0.txt       P1=OK fm=9
+map1(1).txt    P1=OK fm=7
+map2(1).txt    P1=OK fm=7
+map3(1).txt    P1=OK fm=7
+map4(1).txt    P1=OK fm=6
+map5(1).txt    P1=OK fm=6
+map6.txt       P1=OK fm=4
+map8.txt       P1=OK fm=8
+map9.txt       P1=OK fm=4
+map11.txt      P1=OK fm=10

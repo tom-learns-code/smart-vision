@@ -1,0 +1,1477 @@
+[
+  {
+    "type": "free_move",
+    "target": [
+      2,
+      9
+    ],
+    "theta": null,
+    "waypoints": [
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        2,
+        4
+      ],
+      [
+        1,
+        4
+      ],
+      [
+        1,
+        5
+      ],
+      [
+        1,
+        6
+      ],
+      [
+        1,
+        7
+      ],
+      [
+        1,
+        8
+      ],
+      [
+        1,
+        9
+      ],
+      [
+        2,
+        9
+      ]
+    ],
+    "narrow_passage": true
+  },
+  {
+    "type": "push_box",
+    "target": [
+      2,
+      9
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 2,
+      "box_start": [
+        2,
+        9
+      ],
+      "box_target": [
+        3,
+        9
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      3,
+      9
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 2,
+      "box_start": [
+        3,
+        9
+      ],
+      "box_target": [
+        4,
+        9
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      3,
+      8
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        3,
+        8
+      ],
+      "box_target": [
+        3,
+        7
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "free_move",
+    "target": [
+      4,
+      7
+    ],
+    "theta": null,
+    "waypoints": [
+      [
+        4,
+        8
+      ],
+      [
+        4,
+        7
+      ]
+    ],
+    "narrow_passage": false
+  },
+  {
+    "type": "push_bomb",
+    "target": [
+      4,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "bomb_id": 3,
+      "bomb_start": [
+        4,
+        7
+      ],
+      "bomb_target": [
+        4,
+        6
+      ],
+      "wall_target": [
+        4,
+        6
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_bomb",
+    "target": [
+      4,
+      6
+    ],
+    "theta": null,
+    "push_meta": {
+      "bomb_id": 3,
+      "bomb_start": [
+        4,
+        6
+      ],
+      "bomb_target": [
+        4,
+        5
+      ],
+      "wall_target": [
+        4,
+        5
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_bomb",
+    "target": [
+      4,
+      5
+    ],
+    "theta": null,
+    "push_meta": {
+      "bomb_id": 3,
+      "bomb_start": [
+        4,
+        5
+      ],
+      "bomb_target": [
+        4,
+        4
+      ],
+      "wall_target": [
+        4,
+        4
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "wait",
+    "target": null,
+    "theta": null,
+    "duration": 0.5,
+    "reason": "bomb_explosion"
+  },
+  {
+    "type": "free_move",
+    "target": [
+      4,
+      9
+    ],
+    "theta": null,
+    "waypoints": [
+      [
+        4,
+        4
+      ],
+      [
+        4,
+        5
+      ],
+      [
+        4,
+        6
+      ],
+      [
+        4,
+        7
+      ],
+      [
+        4,
+        8
+      ],
+      [
+        3,
+        8
+      ],
+      [
+        3,
+        9
+      ],
+      [
+        3,
+        10
+      ],
+      [
+        4,
+        10
+      ],
+      [
+        4,
+        9
+      ]
+    ],
+    "narrow_passage": true
+  },
+  {
+    "type": "push_box",
+    "target": [
+      4,
+      9
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 2,
+      "box_start": [
+        4,
+        9
+      ],
+      "box_target": [
+        4,
+        8
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      4,
+      8
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 2,
+      "box_start": [
+        4,
+        8
+      ],
+      "box_target": [
+        4,
+        7
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      4,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 2,
+      "box_start": [
+        4,
+        7
+      ],
+      "box_target": [
+        4,
+        6
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      4,
+      6
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 2,
+      "box_start": [
+        4,
+        6
+      ],
+      "box_target": [
+        4,
+        5
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      4,
+      5
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 2,
+      "box_start": [
+        4,
+        5
+      ],
+      "box_target": [
+        4,
+        4
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      4,
+      4
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 2,
+      "box_start": [
+        4,
+        4
+      ],
+      "box_target": [
+        4,
+        3
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": true
+  },
+  {
+    "type": "push_box",
+    "target": [
+      4,
+      3
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 2,
+      "box_start": [
+        4,
+        3
+      ],
+      "box_target": [
+        4,
+        2
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": true
+  },
+  {
+    "type": "push_box",
+    "target": [
+      4,
+      2
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 2,
+      "box_start": [
+        4,
+        2
+      ],
+      "box_target": [
+        4,
+        1
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "free_move",
+    "target": [
+      3,
+      7
+    ],
+    "theta": null,
+    "waypoints": [
+      [
+        4,
+        1
+      ],
+      [
+        4,
+        2
+      ],
+      [
+        4,
+        3
+      ],
+      [
+        4,
+        4
+      ],
+      [
+        3,
+        4
+      ],
+      [
+        2,
+        4
+      ],
+      [
+        1,
+        4
+      ],
+      [
+        1,
+        5
+      ],
+      [
+        1,
+        6
+      ],
+      [
+        1,
+        7
+      ],
+      [
+        2,
+        7
+      ],
+      [
+        3,
+        7
+      ]
+    ],
+    "narrow_passage": true
+  },
+  {
+    "type": "push_box",
+    "target": [
+      3,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        3,
+        7
+      ],
+      "box_target": [
+        4,
+        7
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      4,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        4,
+        7
+      ],
+      "box_target": [
+        5,
+        7
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      5,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        5,
+        7
+      ],
+      "box_target": [
+        6,
+        7
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      6,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        6,
+        7
+      ],
+      "box_target": [
+        7,
+        7
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      7,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        7,
+        7
+      ],
+      "box_target": [
+        8,
+        7
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      8,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        8,
+        7
+      ],
+      "box_target": [
+        9,
+        7
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "free_move",
+    "target": [
+      10,
+      7
+    ],
+    "theta": null,
+    "waypoints": [
+      [
+        8,
+        6
+      ],
+      [
+        9,
+        6
+      ],
+      [
+        10,
+        6
+      ],
+      [
+        10,
+        7
+      ]
+    ],
+    "narrow_passage": false
+  },
+  {
+    "type": "push_bomb",
+    "target": [
+      10,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "bomb_id": 4,
+      "bomb_start": [
+        10,
+        7
+      ],
+      "bomb_target": [
+        10,
+        8
+      ],
+      "wall_target": [
+        10,
+        8
+      ],
+      "push_dir": "DOWN"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "wait",
+    "target": null,
+    "theta": null,
+    "duration": 0.5,
+    "reason": "bomb_explosion"
+  },
+  {
+    "type": "free_move",
+    "target": [
+      12,
+      8
+    ],
+    "theta": null,
+    "waypoints": [
+      [
+        10,
+        8
+      ],
+      [
+        11,
+        8
+      ],
+      [
+        12,
+        8
+      ]
+    ],
+    "narrow_passage": true
+  },
+  {
+    "type": "push_bomb",
+    "target": [
+      12,
+      8
+    ],
+    "theta": null,
+    "push_meta": {
+      "bomb_id": 5,
+      "bomb_start": [
+        12,
+        8
+      ],
+      "bomb_target": [
+        13,
+        8
+      ],
+      "wall_target": [
+        13,
+        8
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "free_move",
+    "target": [
+      13,
+      8
+    ],
+    "theta": null,
+    "waypoints": [
+      [
+        11,
+        8
+      ],
+      [
+        11,
+        9
+      ],
+      [
+        11,
+        10
+      ],
+      [
+        12,
+        10
+      ],
+      [
+        13,
+        10
+      ],
+      [
+        13,
+        9
+      ],
+      [
+        13,
+        8
+      ]
+    ],
+    "narrow_passage": true
+  },
+  {
+    "type": "push_bomb",
+    "target": [
+      13,
+      8
+    ],
+    "theta": null,
+    "push_meta": {
+      "bomb_id": 5,
+      "bomb_start": [
+        13,
+        8
+      ],
+      "bomb_target": [
+        13,
+        7
+      ],
+      "wall_target": [
+        13,
+        7
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_bomb",
+    "target": [
+      13,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "bomb_id": 5,
+      "bomb_start": [
+        13,
+        7
+      ],
+      "bomb_target": [
+        13,
+        6
+      ],
+      "wall_target": [
+        13,
+        6
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_bomb",
+    "target": [
+      13,
+      6
+    ],
+    "theta": null,
+    "push_meta": {
+      "bomb_id": 5,
+      "bomb_start": [
+        13,
+        6
+      ],
+      "bomb_target": [
+        13,
+        5
+      ],
+      "wall_target": [
+        13,
+        5
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_bomb",
+    "target": [
+      13,
+      5
+    ],
+    "theta": null,
+    "push_meta": {
+      "bomb_id": 5,
+      "bomb_start": [
+        13,
+        5
+      ],
+      "bomb_target": [
+        13,
+        4
+      ],
+      "wall_target": [
+        13,
+        4
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "wait",
+    "target": null,
+    "theta": null,
+    "duration": 0.5,
+    "reason": "bomb_explosion"
+  },
+  {
+    "type": "free_move",
+    "target": [
+      9,
+      7
+    ],
+    "theta": null,
+    "waypoints": [
+      [
+        13,
+        4
+      ],
+      [
+        12,
+        4
+      ],
+      [
+        11,
+        4
+      ],
+      [
+        10,
+        4
+      ],
+      [
+        10,
+        5
+      ],
+      [
+        9,
+        5
+      ],
+      [
+        9,
+        6
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      9,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        9,
+        7
+      ],
+      "box_target": [
+        9,
+        8
+      ],
+      "push_dir": "DOWN"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      9,
+      8
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        9,
+        8
+      ],
+      "box_target": [
+        9,
+        9
+      ],
+      "push_dir": "DOWN"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      9,
+      9
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        9,
+        9
+      ],
+      "box_target": [
+        9,
+        10
+      ],
+      "push_dir": "DOWN"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "free_move",
+    "target": [
+      9,
+      10
+    ],
+    "theta": null,
+    "waypoints": [
+      [
+        10,
+        9
+      ],
+      [
+        10,
+        10
+      ],
+      [
+        9,
+        10
+      ]
+    ],
+    "narrow_passage": true
+  },
+  {
+    "type": "push_box",
+    "target": [
+      9,
+      10
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        9,
+        10
+      ],
+      "box_target": [
+        8,
+        10
+      ],
+      "push_dir": "LEFT"
+    },
+    "narrow_passage": true
+  },
+  {
+    "type": "push_box",
+    "target": [
+      8,
+      10
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        8,
+        10
+      ],
+      "box_target": [
+        7,
+        10
+      ],
+      "push_dir": "LEFT"
+    },
+    "narrow_passage": true
+  },
+  {
+    "type": "push_box",
+    "target": [
+      7,
+      10
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        7,
+        10
+      ],
+      "box_target": [
+        6,
+        10
+      ],
+      "push_dir": "LEFT"
+    },
+    "narrow_passage": true
+  },
+  {
+    "type": "free_move",
+    "target": [
+      8,
+      8
+    ],
+    "theta": null,
+    "waypoints": [
+      [
+        8,
+        10
+      ],
+      [
+        9,
+        10
+      ],
+      [
+        9,
+        9
+      ],
+      [
+        9,
+        8
+      ],
+      [
+        9,
+        7
+      ],
+      [
+        8,
+        7
+      ],
+      [
+        7,
+        7
+      ],
+      [
+        7,
+        8
+      ],
+      [
+        8,
+        8
+      ]
+    ],
+    "narrow_passage": true
+  },
+  {
+    "type": "push_box",
+    "target": [
+      8,
+      8
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 1,
+      "box_start": [
+        8,
+        8
+      ],
+      "box_target": [
+        9,
+        8
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      9,
+      8
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 1,
+      "box_start": [
+        9,
+        8
+      ],
+      "box_target": [
+        10,
+        8
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      10,
+      8
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 1,
+      "box_start": [
+        10,
+        8
+      ],
+      "box_target": [
+        11,
+        8
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      11,
+      8
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 1,
+      "box_start": [
+        11,
+        8
+      ],
+      "box_target": [
+        12,
+        8
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      12,
+      8
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 1,
+      "box_start": [
+        12,
+        8
+      ],
+      "box_target": [
+        13,
+        8
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "free_move",
+    "target": [
+      13,
+      8
+    ],
+    "theta": null,
+    "waypoints": [
+      [
+        11,
+        8
+      ],
+      [
+        11,
+        9
+      ],
+      [
+        11,
+        10
+      ],
+      [
+        12,
+        10
+      ],
+      [
+        13,
+        10
+      ],
+      [
+        13,
+        9
+      ],
+      [
+        13,
+        8
+      ]
+    ],
+    "narrow_passage": true
+  },
+  {
+    "type": "push_box",
+    "target": [
+      13,
+      8
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 1,
+      "box_start": [
+        13,
+        8
+      ],
+      "box_target": [
+        13,
+        7
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      13,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 1,
+      "box_start": [
+        13,
+        7
+      ],
+      "box_target": [
+        13,
+        6
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      13,
+      6
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 1,
+      "box_start": [
+        13,
+        6
+      ],
+      "box_target": [
+        13,
+        5
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      13,
+      5
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 1,
+      "box_start": [
+        13,
+        5
+      ],
+      "box_target": [
+        13,
+        4
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      13,
+      4
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 1,
+      "box_start": [
+        13,
+        4
+      ],
+      "box_target": [
+        13,
+        3
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      13,
+      3
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 1,
+      "box_start": [
+        13,
+        3
+      ],
+      "box_target": [
+        13,
+        2
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      13,
+      2
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 1,
+      "box_start": [
+        13,
+        2
+      ],
+      "box_target": [
+        13,
+        1
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "free_move",
+    "target": [
+      13,
+      1
+    ],
+    "theta": null,
+    "waypoints": [
+      [
+        14,
+        2
+      ],
+      [
+        14,
+        1
+      ],
+      [
+        13,
+        1
+      ]
+    ],
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      13,
+      1
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 1,
+      "box_start": [
+        13,
+        1
+      ],
+      "box_target": [
+        12,
+        1
+      ],
+      "push_dir": "LEFT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      12,
+      1
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 1,
+      "box_start": [
+        12,
+        1
+      ],
+      "box_target": [
+        11,
+        1
+      ],
+      "push_dir": "LEFT"
+    },
+    "narrow_passage": false
+  }
+]

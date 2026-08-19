@@ -1,0 +1,818 @@
+import sensor, image, time
+from machine import UART
+
+# =========================
+# 固定参数
+# =========================
+GRID_W, GRID_H = 16, 12
+
+# 地图ROI（轴对齐）
+ROI_X1, ROI_Y1 = 24, 43
+ROI_W, ROI_H = 578, 418
+ROI_X2 = ROI_X1 + ROI_W
+ROI_Y2 = ROI_Y1 + ROI_H
+ROI = (ROI_X1, ROI_Y1, ROI_W, ROI_H)
+
+# 串口
+UART_ID = 5
+UART_BAUD = 115200
+UART_CANDIDATES = (UART_ID, 12, 11)
+
+VP_HEADER_0 = 0xA5
+VP_HEADER_1 = 0x5A
+VP_TYPE_FULL_MAP = 0x01
+VP_TYPE_POS_UPDATE = 0x02
+VP_TYPE_MAP_REQUEST = 0x03
+
+POS_UPDATE_PERIOD_MS = 50
+MAX_BOXES = 4
+MAX_GOALS = 4
+MAX_BOMBS = 2
+GRID_SIZE_MM = 200
+
+# LAB区间定义
+# 每个物品对应一个或多个区间
+# wall示例：需要同时满足两个L区间条件，且a、b在对应区间
+# 格式: [(L_min, L_max), (a_min, a_max), (b_min, b_max)]
+# PLAYER（地图）：16×12 格心建图时用 LAB_RANGES["PLAYER"]，可多段 OR。
+# LAB_PLAYER_TRACK（追踪）：mode2 算车质心专用，可与地图不同（如两色车拆两条、避开黄；地图仍可用较宽单框把车格标出来）。
+LAB_RANGES = {
+    "WALL": [
+        {"L": (5, 99), "a": (-14, 35),  "b": (-59, 8)},
+        {"L": (5, 99), "a": (-14, 35),  "b": (-59, 8)}
+    ],
+    "EMPTY": [
+        {"L": (25, 75), "a": (20, 80), "b": (-110, -60)}
+    ],
+    "GOAL": [
+        {"L": (20, 65), "a": (55, 100), "b": (-90, -50)}
+    ],
+    "BOX": [
+        {"L": (50, 100), "a": (-40, -10), "b": (50, 95)}
+    ],
+    "BOMB": [
+        {"L": (20, 65), "a": (38, 85), "b": (15, 75)}
+    ],
+    "PLAYER": [
+        {"L": (35, 93), "a": (-85, 9), "b": (-60, 87)},
+    ],
+}
+
+LAB_PLAYER_TRACK = [
+    # 支路1：偏一侧颜色（示例：原 a 轴左半；请用现场采样的 LAB 改）
+        {"L": (20, 95), "a": (-55, -5), "b": (-50, -2)},
+        # 支路2：另一侧颜色（示例：原 a 轴右半；与上条 OR，中间 a 约 (-47,-43) 不判 PLAYER，用于避开黄）
+        {"L": (35, 95), "a": (-90, -28), "b": (45, 87)},
+]
+
+# =========================
+# 显示控制
+# =========================
+SHOW_CELL_CODES = False
+SHOW_FPS = False
+# 统一测试开关
+DEBUG_TRACK = False
+# =========================
+# 地图采样策略（性能关键）
+# =========================
+SAMPLE_MODE = 2
+SAMP_OFF = 1
+_o = SAMP_OFF
+# sample5 相对中心的 9 个偏移（与原先 pts 顺序一致）
+_SAMPLE5_DXY = (
+    (0, 0), (-_o, 0), (-_o, _o), (_o, 0), (_o, _o), (0, -_o), (-_o, -_o), (0, _o), (_o, -_o),
+)
+del _o
+USE_TEMPORAL_FALLBACK = True
+# 低延迟：mode2 不跑全图（地图仅在 mode1 刷新；需下位机接受「车位与地图非同帧」）
+SKIP_GRID_ON_MODE2 = True
+# 无请求时串口轮询休眠（微秒）；越小响应越快，0 为忙等
+IDLE_UART_SLEEP_US = 100
+# 编码
+ENC = {"EMPTY":0, "WALL":1, "GOAL":2, "BOX":3, "BOMB":4, "PLAYER":5, "UNK":255}
+
+def _lab_rng6(key):
+    e = LAB_RANGES[key][0]
+    return (e["L"][0], e["L"][1], e["a"][0], e["a"][1], e["b"][0], e["b"][1])
+
+def _lab_rng6_entry(e):
+    return (e["L"][0], e["L"][1], e["a"][0], e["a"][1], e["b"][0], e["b"][1])
+
+_B_WALL = _lab_rng6("WALL")
+_B_EMPTY = _lab_rng6("EMPTY")
+_B_GOAL = _lab_rng6("GOAL")
+_B_BOX = _lab_rng6("BOX")
+_B_BOMB = _lab_rng6("BOMB")
+_B_PLAYER_SEGS = tuple(_lab_rng6_entry(e) for e in LAB_RANGES["PLAYER"])
+_B_PLAYER_TRACK_SEGS = tuple(_lab_rng6_entry(e) for e in LAB_PLAYER_TRACK)
+
+# =========================
+# PLAYER中心检测参数
+# =========================
+PLAYER_SCAN_STEP = 3
+PLAYER_MIN_HIT = 40
+# mode2 专用：步长大则采样少、延迟低（车体需足够大；丢车则略减小步长或降 PLAYER_MIN_HIT_MODE2）
+PLAYER_SCAN_STEP_MODE2 = 4
+PLAYER_MIN_HIT_MODE2 = 24
+# mode2 未找到车时额外再采图识别次数（0=只试一次；2=首次失败后再拍 2 次，共最多 3 次）
+PLAYER_FIND_EXTRA_SNAPSHOTS = 2
+PLAYER_SEARCH_RING = 1   # 四周一圈 => 3x3格区域；如需更大可改2
+# 车位：仅用 PLAYER 的 LAB 会把「与车颜色重叠的箱子」算进质心；改为走 classify 与地图一致（BOX 优先于 PLAYER）
+# 为 True 时：不统计落在「上一帧地图为箱子」格内的采样点，减轻旁侧箱子拉偏（仅 mode1 会刷新 last_map 时可关 false 试效果）
+PLAYER_SKIP_SAMPLES_IN_LASTMAP_BOX = False
+
+TEXT_DX = 7
+TEXT_DY = 10
+
+# =========================
+# 摄像头初始化
+# =========================
+sensor.reset()
+sensor.set_pixformat(sensor.RGB565)
+sensor.set_framesize(sensor.VGA)
+sensor.set_framerate(60)
+sensor.set_auto_exposure(False, exposure_us=1200)  # 加这行
+sensor.skip_frames(time=300)
+
+
+USE_WINDOWING = False
+
+_CMM_LINES = (
+    "hw,-,-,rt117x,seekfree_art_plus,",
+    "uart,5,TXD,-,AD_28,",
+    "uart,5,RXD,-,AD_29,",
+    "uart,11,TXD,-,LPSR_04,",
+    "uart,11,RXD,-,LPSR_05,",
+    "uart,12,TXD,-,LPSR_06,",
+    "uart,12,RXD,-,LPSR_07,",
+)
+
+_CMM_CFG = """fn,unit,signal,hint,pinobj,comments
+hw,-,-,rt117x,seekfree_art_plus,
+uart,5,TXD,-,AD_28,
+uart,5,RXD,-,AD_29,
+uart,11,TXD,-,LPSR_04,
+uart,11,RXD,-,LPSR_05,
+uart,12,TXD,-,LPSR_06,
+uart,12,RXD,-,LPSR_07,
+"""
+
+def load_cmm_config():
+    try:
+        from machine import Pin
+        import cmm
+        cmap = {}
+        for line in _CMM_LINES:
+            parts = line.split(",")
+            if parts[1] == "-":
+                name = parts[0] + "." + parts[2]
+            else:
+                name = parts[0] + "." + parts[1] + "." + parts[2]
+            try:
+                pin = Pin(parts[4])
+            except Exception:
+                pin = None
+            cmap[name] = (parts[3], parts[4], pin, None)
+        cmm.add(cmap)
+        print("cmm.add OK")
+        return
+    except Exception as e:
+        print("direct cmm.add failed:", e)
+
+    try:
+        import cmm_load
+        cmm_load.load()
+        print("cmm_load OK")
+        return
+    except Exception as e:
+        print("import cmm_load failed:", e)
+
+for path in ("/cmm_cfg.csv", "cmm_cfg.csv", "/flash/cmm_cfg.csv"):
+    try:
+        with open(path, "w") as f:
+            f.write(_CMM_CFG)
+        print("WROTE", path)
+    except Exception as e:
+        print("SKIP", path, e)
+
+load_cmm_config()
+
+uart = None
+for uart_id in UART_CANDIDATES:
+    try:
+        uart = UART(uart_id, UART_BAUD)
+        print("UART%d OK" % uart_id)
+        break
+    except Exception as e:
+        print("UART%d NO: %s" % (uart_id, e))
+
+if uart is None:
+    raise Exception("No UART opened - check cmm config and wiring")
+
+clock = time.clock()
+
+# =========================
+# 工具函数
+# =========================
+def clamp(v, lo, hi):
+    if v < lo:
+        return lo
+    if v > hi:
+        return hi
+    return v
+
+def build_grid_lines_rect(x1, y1, w, h, gw, gh):
+    x_lines = [int(round(x1 + i * w / gw)) for i in range(gw + 1)]
+    y_lines = [int(round(y1 + i * h / gh)) for i in range(gh + 1)]
+    return x_lines, y_lines
+
+def build_grid_points_rect(x_lines, y_lines, use_windowing=False):
+    pts = []
+    for gy in range(GRID_H):
+        for gx in range(GRID_W):
+            cx = (x_lines[gx] + x_lines[gx + 1]) // 2
+            cy = (y_lines[gy] + y_lines[gy + 1]) // 2
+
+            if use_windowing:
+                cx -= ROI_X1
+                cy -= ROI_Y1
+
+            pts.append((cx, cy))
+    return pts
+
+def sample1_lab(img, x, y):
+    """
+    单点采样并返回 LAB 值
+    """
+    r, g, b = img.get_pixel(x, y)
+    L_val, A_val, B_val = rgb_to_lab(r, g, b)
+    return L_val, A_val, B_val
+
+def sample5_lab(img, x, y):
+    w = img.width()
+    h = img.height()
+    wm1, hm1 = w - 1, h - 1
+    sum_L = 0
+    sum_a = 0
+    sum_b = 0
+    for dx, dy in _SAMPLE5_DXY:
+        px = x + dx
+        if px < 0:
+            px = 0
+        elif px > wm1:
+            px = wm1
+        py = y + dy
+        if py < 0:
+            py = 0
+        elif py > hm1:
+            py = hm1
+        r, g, b = img.get_pixel(px, py)
+        L, a, b_ = rgb_to_lab(r, g, b)
+        sum_L += L
+        sum_a += a
+        sum_b += b_
+    return sum_L // 9, sum_a // 9, sum_b // 9
+
+def gray_score(r, g, b):
+    avg = (r + g + b) // 3
+    return abs(r - avg) + abs(g - avg) + abs(b - avg)
+
+def l1_dist(r, g, b, p):
+    return abs(r - p[0]) + abs(g - p[1]) + abs(b - p[2])
+
+def _lab_xfer_f(t):
+    return t ** (1/3) if t > 0.008856 else 7.787 * t + 16/116
+
+def rgb_to_lab(r, g, b):
+    # RGB -> XYZ
+    r = r / 255.0
+    g = g / 255.0
+    b = b / 255.0
+
+    r = r / 12.92 if r <= 0.04045 else ((r + 0.055) / 1.055) ** 2.4
+    g = g / 12.92 if g <= 0.04045 else ((g + 0.055) / 1.055) ** 2.4
+    b = b / 12.92 if b <= 0.04045 else ((b + 0.055) / 1.055) ** 2.4
+
+    x = r * 0.4124 + g * 0.3576 + b * 0.1805
+    y = r * 0.2126 + g * 0.7152 + b * 0.0722
+    z = r * 0.0193 + g * 0.1192 + b * 0.9505
+
+    # XYZ -> LAB
+    x /= 0.95047
+    y /= 1.0000
+    z /= 1.08883
+
+    fx = _lab_xfer_f(x)
+    fy = _lab_xfer_f(y)
+    fz = _lab_xfer_f(z)
+
+    L = 116 * fy - 16
+    a = 500 * (fx - fy)
+    b = 200 * (fy - fz)
+
+    return L, a, b
+
+def classify_lab_code_with_player_segs(L_val, A_val, B_val, player_segs):
+    """与 classify_lab_code 相同，但最后 PLAYER 判定使用传入的 player_segs（地图 / 追踪可分开）。"""
+    lo, hi, alo, ahi, blo, bhi = _B_WALL
+    if lo <= L_val <= hi and alo <= A_val <= ahi and blo <= B_val <= bhi:
+        return 1
+    lo, hi, alo, ahi, blo, bhi = _B_EMPTY
+    if lo <= L_val <= hi and alo <= A_val <= ahi and blo <= B_val <= bhi:
+        return 0
+    lo, hi, alo, ahi, blo, bhi = _B_GOAL
+    if lo <= L_val <= hi and alo <= A_val <= ahi and blo <= B_val <= bhi:
+        return 2
+    lo, hi, alo, ahi, blo, bhi = _B_BOX
+    if lo <= L_val <= hi and alo <= A_val <= ahi and blo <= B_val <= bhi:
+        return 3
+    lo, hi, alo, ahi, blo, bhi = _B_BOMB
+    if lo <= L_val <= hi and alo <= A_val <= ahi and blo <= B_val <= bhi:
+        return 4
+    for lo, hi, alo, ahi, blo, bhi in player_segs:
+        if lo <= L_val <= hi and alo <= A_val <= ahi and blo <= B_val <= bhi:
+            return 5
+    return 255
+
+def classify_lab_code(L_val, A_val, B_val):
+    """地图格点分类：PLAYER 使用 LAB_RANGES["PLAYER"]。"""
+    return classify_lab_code_with_player_segs(L_val, A_val, B_val, _B_PLAYER_SEGS)
+
+rx_buf = bytearray()
+full_map_requested = False
+
+def xor_checksum(data):
+    cs = 0
+    for b in data:
+        cs ^= b
+    return cs & 0xFF
+
+def poll_map_request():
+    """MCU -> OpenART: [A5][5A][03][reason][xor first 4 bytes]."""
+    global rx_buf, full_map_requested
+
+    n = uart.any()
+    if n:
+        data = uart.read(n)
+        if data:
+            rx_buf.extend(data)
+
+    while len(rx_buf) >= 5:
+        if rx_buf[0] != VP_HEADER_0 or rx_buf[1] != VP_HEADER_1:
+            del rx_buf[0]
+            continue
+
+        pkt = rx_buf[:5]
+        if pkt[2] == VP_TYPE_MAP_REQUEST and xor_checksum(pkt[:4]) == pkt[4]:
+            full_map_requested = True
+            del rx_buf[:5]
+        else:
+            del rx_buf[0]
+
+    if len(rx_buf) > 32:
+        rx_buf = rx_buf[-16:]
+
+def find_player(img, req_gx, req_gy, scan_step=None, min_hit=None):
+    global debug_search_px0, debug_search_py0, debug_search_px1, debug_search_py1
+
+    if scan_step is None:
+        scan_step = PLAYER_SCAN_STEP
+    if min_hit is None:
+        min_hit = PLAYER_MIN_HIT
+
+    gx0 = clamp(req_gx - PLAYER_SEARCH_RING, 0, GRID_W - 1)
+    gx1 = clamp(req_gx + PLAYER_SEARCH_RING, 0, GRID_W - 1)
+    gy0 = clamp(req_gy - PLAYER_SEARCH_RING, 0, GRID_H - 1)
+    gy1 = clamp(req_gy + PLAYER_SEARCH_RING, 0, GRID_H - 1)
+
+    px0 = x_lines[gx0] - ROI_X1
+    px1 = x_lines[gx1 + 1] - ROI_X1
+    py0 = y_lines[gy0] - ROI_Y1
+    py1 = y_lines[gy1 + 1] - ROI_Y1
+
+    if USE_WINDOWING:
+        wlim, hlim = img.width(), img.height()
+        ox, oy = 0, 0
+    else:
+        wlim, hlim = ROI_W, ROI_H
+        ox, oy = ROI_X1, ROI_Y1
+
+    px0 = clamp(px0, 0, wlim - 1)
+    px1 = clamp(px1, 0, wlim)
+    py0 = clamp(py0, 0, hlim - 1)
+    py1 = clamp(py1, 0, hlim)
+
+    debug_search_px0 = px0
+    debug_search_py0 = py0
+    debug_search_px1 = px1
+    debug_search_py1 = py1
+
+    cnt = 0
+    sum_x = 0
+    sum_y = 0
+
+    min_x = 9999
+    min_y = 9999
+    max_x = -1
+    max_y = -1
+
+    skip_box = PLAYER_SKIP_SAMPLES_IN_LASTMAP_BOX
+    box_code = ENC["BOX"]
+    player_code = ENC["PLAYER"]
+
+    for y in range(py0, py1, scan_step):
+        for x in range(px0, px1, scan_step):
+            ax = x + ox
+            ay = y + oy
+            if USE_WINDOWING:
+                fax, fay = ax + ROI_X1, ay + ROI_Y1
+            else:
+                fax, fay = ax, ay
+            if skip_box:
+                gi = _grid_idx_at_full_pixel(fax, fay)
+                if gi >= 0 and last_map[gi] == box_code:
+                    continue
+            L_val, A_val, B_val = sample1_lab(img, ax, ay)
+            if classify_lab_code_with_player_segs(L_val, A_val, B_val, _B_PLAYER_TRACK_SEGS) != player_code:
+                continue
+            sum_x += x
+            sum_y += y
+            cnt += 1
+
+            if x < min_x: min_x = x
+            if x > max_x: max_x = x
+            if y < min_y: min_y = y
+            if y > max_y: max_y = y
+
+    if cnt < min_hit:
+        return None
+
+    # 方案A：质心
+    cx = sum_x // cnt
+    cy = sum_y // cnt
+
+    # 方案B：外接框中心（更稳）
+    # cx = (min_x + max_x) // 2
+    # cy = (min_y + max_y) // 2
+
+    return (cx, cy)
+
+def split_3digits(v):
+    # 未找到时发 999
+    if v < 0:
+        return 9, 9, 9
+
+    if v > 999:
+        v = 999
+
+    b = v // 100
+    s = (v // 10) % 10
+    g = v % 10
+    return b, s, g
+
+# =========================
+# 预计算比例网格
+# =========================
+x_lines, y_lines = build_grid_lines_rect(ROI_X1, ROI_Y1, ROI_W, ROI_H, GRID_W, GRID_H)
+points = build_grid_points_rect(x_lines, y_lines, USE_WINDOWING)
+
+last_map = bytearray([ENC["EMPTY"]] * (GRID_W * GRID_H))
+
+def _grid_idx_at_full_pixel(ax_full, ay_full):
+    """整图坐标落在哪一格；越界返回 -1。"""
+    gx = -1
+    for i in range(GRID_W):
+        if x_lines[i] <= ax_full < x_lines[i + 1]:
+            gx = i
+            break
+    if gx < 0:
+        return -1
+    for j in range(GRID_H):
+        if y_lines[j] <= ay_full < y_lines[j + 1]:
+            return j * GRID_W + gx
+    return -1
+
+def build_current_map(img):
+    out = bytearray(GRID_W * GRID_H)
+    for idx, (px, py) in enumerate(points):
+        if SAMPLE_MODE == 1:
+            L_val, A_val, B_val = sample1_lab(img, px, py)
+        else:
+            L_val, A_val, B_val = sample5_lab(img, px, py)
+        code = classify_lab_code(L_val, A_val, B_val)
+        if code == 255:
+            out[idx] = last_map[idx] if USE_TEMPORAL_FALLBACK else ENC["EMPTY"]
+        else:
+            out[idx] = code
+    last_map[:] = out
+    return out
+
+def collect_cells(out, code, max_count):
+    cells = []
+    for idx, v in enumerate(out):
+        if v == code:
+            cells.append((idx % GRID_W, idx // GRID_W))
+            if len(cells) >= max_count:
+                break
+    return cells
+
+def local_player_to_mm(cx, cy):
+    if cx < 0 or cy < 0:
+        return 0, 0
+    x_mm = int(cx * GRID_W * GRID_SIZE_MM / ROI_W + 0.5)
+    y_mm = int(cy * GRID_H * GRID_SIZE_MM / ROI_H + 0.5)
+    return x_mm, y_mm
+
+def local_player_to_grid(cx, cy):
+    if cx < 0 or cy < 0:
+        return -1, -1
+    ax = cx + ROI_X1
+    ay = cy + ROI_Y1
+    idx = _grid_idx_at_full_pixel(ax, ay)
+    if idx < 0:
+        return -1, -1
+    return idx % GRID_W, idx // GRID_W
+
+def find_player_full_frame(img, scan_step=None, min_hit=None):
+    global debug_search_px0, debug_search_py0, debug_search_px1, debug_search_py1
+
+    if scan_step is None:
+        scan_step = PLAYER_SCAN_STEP_MODE2
+    if min_hit is None:
+        min_hit = PLAYER_MIN_HIT_MODE2
+
+    if USE_WINDOWING:
+        px0, py0 = 0, 0
+        px1, py1 = img.width(), img.height()
+        ox, oy = 0, 0
+    else:
+        px0, py0 = 0, 0
+        px1, py1 = ROI_W, ROI_H
+        ox, oy = ROI_X1, ROI_Y1
+
+    debug_search_px0 = px0
+    debug_search_py0 = py0
+    debug_search_px1 = px1
+    debug_search_py1 = py1
+
+    cnt = 0
+    sum_x = 0
+    sum_y = 0
+    player_code = ENC["PLAYER"]
+
+    for y in range(py0, py1, scan_step):
+        for x in range(px0, px1, scan_step):
+            ax = x + ox
+            ay = y + oy
+            L_val, A_val, B_val = sample1_lab(img, ax, ay)
+            if classify_lab_code_with_player_segs(L_val, A_val, B_val, _B_PLAYER_TRACK_SEGS) != player_code:
+                continue
+            sum_x += x
+            sum_y += y
+            cnt += 1
+
+    if cnt < min_hit:
+        return None
+    return (sum_x // cnt, sum_y // cnt)
+
+# =========================
+# 调试状态
+# =========================
+player_found = False
+player_cx = -1
+player_cy = -1
+last_player_gx = -1
+last_player_gy = -1
+
+head_cx = -1
+head_cy = -1
+tail_cx = -1
+tail_cy = -1
+
+debug_req_gx = -1
+debug_req_gy = -1
+debug_search_px0 = -1
+debug_search_py0 = -1
+debug_search_px1 = -1
+debug_search_py1 = -1
+
+def draw_cell_codes(img, out_bytes):
+    if USE_WINDOWING:
+        rx, ry = 0, 0
+        local_x_lines = [x - ROI_X1 for x in x_lines]
+        local_y_lines = [y - ROI_Y1 for y in y_lines]
+    else:
+        rx, ry = ROI_X1, ROI_Y1
+        local_x_lines = x_lines
+        local_y_lines = y_lines
+
+    img.draw_rectangle(rx, ry, ROI_W, ROI_H, color=(255, 255, 255), thickness=1)
+
+    for x in local_x_lines[1:-1]:
+        img.draw_line(x, ry, x, ry + ROI_H, color=(255, 255, 255), thickness=1)
+
+    for y in local_y_lines[1:-1]:
+        img.draw_line(rx, y, rx + ROI_W, y, color=(255, 255, 255), thickness=1)
+
+    for gy in range(GRID_H):
+        for gx in range(GRID_W):
+            idx = gy * GRID_W + gx
+            v = out_bytes[idx]
+            if v > 5:
+                continue
+
+            cx, cy = points[idx]
+            img.draw_string(cx - TEXT_DX, cy - TEXT_DY, str(v), color=(0, 0, 0), scale=2, thickness=2)
+
+def draw_player_center(img):
+    if not DEBUG_TRACK:
+        return
+    if not player_found:
+        return
+
+    # 车中心（红）
+    if player_cx >= 0 and player_cy >= 0:
+        gx = player_cx + ROI_X1
+        gy = player_cy + ROI_Y1
+        img.draw_cross(gx, gy, color=(255, 0, 0), size=4, thickness=1)
+        img.draw_circle(gx, gy, 4, color=(255, 0, 0), thickness=1)
+
+def draw_search_region(img):
+    if not DEBUG_TRACK:
+        return
+    if debug_search_px0 < 0:
+        return
+
+    x = debug_search_px0 + ROI_X1
+    y = debug_search_py0 + ROI_Y1
+    w = debug_search_px1 - debug_search_px0
+    h = debug_search_py1 - debug_search_py0
+
+    if w > 0 and h > 0:
+        img.draw_rectangle(x, y, w, h, color=(255, 255, 0), thickness=2)
+
+def append_i16(buf, value):
+    value = int(value) & 0xFFFF
+    buf.append(value & 0xFF)
+    buf.append((value >> 8) & 0xFF)
+
+def append_i8(buf, value):
+    buf.append(int(value) & 0xFF)
+
+def append_cell_slots(buf, cells, max_count):
+    count = len(cells)
+    if count > max_count:
+        count = max_count
+    buf.append(count)
+    for i in range(max_count):
+        if i < count:
+            append_i8(buf, cells[i][0])
+            append_i8(buf, cells[i][1])
+        else:
+            append_i8(buf, -1)
+            append_i8(buf, -1)
+
+def send_full_map(out, car_x_mm, car_y_mm, car_theta_x10):
+    payload = bytearray()
+    payload.append(GRID_W)
+    payload.append(GRID_H)
+
+    walls = bytearray(24)
+    for idx, v in enumerate(out):
+        if v == ENC["WALL"]:
+            walls[idx >> 3] |= 1 << (idx & 7)
+    payload.extend(walls)
+
+    append_cell_slots(payload, collect_cells(out, ENC["BOX"], MAX_BOXES), MAX_BOXES)
+    append_cell_slots(payload, collect_cells(out, ENC["GOAL"], MAX_GOALS), MAX_GOALS)
+    append_cell_slots(payload, collect_cells(out, ENC["BOMB"], MAX_BOMBS), MAX_BOMBS)
+
+    append_i16(payload, car_x_mm)
+    append_i16(payload, car_y_mm)
+    append_i16(payload, car_theta_x10)
+    payload.append(xor_checksum(payload))
+
+    pkt = bytearray([VP_HEADER_0, VP_HEADER_1, VP_TYPE_FULL_MAP])
+    pkt.extend(payload)
+    uart.write(pkt)
+
+def send_pos_update(frame_id, out, car_x_mm, car_y_mm, car_theta_x10):
+    payload = bytearray()
+    payload.append(frame_id & 0xFF)
+    append_i16(payload, car_x_mm)
+    append_i16(payload, car_y_mm)
+    append_i16(payload, car_theta_x10)
+
+    boxes = collect_cells(out, ENC["BOX"], MAX_BOXES)
+    bombs = collect_cells(out, ENC["BOMB"], MAX_BOMBS)
+
+    payload.append(len(boxes))
+    for gx, gy in boxes:
+        append_i8(payload, gx)
+        append_i8(payload, gy)
+
+    payload.append(len(bombs))
+    for gx, gy in bombs:
+        append_i8(payload, gx)
+        append_i8(payload, gy)
+
+    payload.append(xor_checksum(payload))
+
+    pkt = bytearray([VP_HEADER_0, VP_HEADER_1, VP_TYPE_POS_UPDATE])
+    pkt.extend(payload)
+    uart.write(pkt)
+
+# =========================
+# 主循环
+# =========================
+frame_id = 0
+last_pos_update_ms = 0
+last_car_x_mm = 0
+last_car_y_mm = 0
+last_car_theta_x10 = 0
+car_known = False
+
+while True:
+    poll_map_request()
+
+    now_ms = time.ticks_ms()
+    need_pos_update = time.ticks_diff(now_ms, last_pos_update_ms) >= POS_UPDATE_PERIOD_MS
+    need_full_map = full_map_requested
+
+    if not need_pos_update and not need_full_map:
+        if IDLE_UART_SLEEP_US > 0:
+            time.sleep_us(IDLE_UART_SLEEP_US)
+        continue
+
+    clock.tick()
+    img = sensor.snapshot()
+
+    # 每帧先清空调试区域
+    debug_search_px0 = -1
+    debug_search_py0 = -1
+    debug_search_px1 = -1
+    debug_search_py1 = -1
+
+    out = build_current_map(img)
+
+    player_found = False
+    pos = None
+
+    if last_player_gx >= 0 and last_player_gy >= 0:
+        pos = find_player(
+            img, last_player_gx, last_player_gy,
+            PLAYER_SCAN_STEP_MODE2,
+            PLAYER_MIN_HIT_MODE2,
+        )
+
+    if pos is None:
+        pos = find_player_full_frame(
+            img,
+            PLAYER_SCAN_STEP_MODE2,
+            PLAYER_MIN_HIT_MODE2,
+        )
+
+    if pos is None:
+        for attempt in range(PLAYER_FIND_EXTRA_SNAPSHOTS):
+            img = sensor.snapshot()
+            pos = find_player_full_frame(
+                img,
+                PLAYER_SCAN_STEP_MODE2,
+                PLAYER_MIN_HIT_MODE2,
+            )
+            if pos is not None:
+                break
+
+    if pos is not None:
+        player_cx, player_cy = pos
+        player_found = True
+        last_car_x_mm, last_car_y_mm = local_player_to_mm(player_cx, player_cy)
+        last_player_gx, last_player_gy = local_player_to_grid(player_cx, player_cy)
+        car_known = True
+        if DEBUG_TRACK:
+            print("CENTER =", int(player_cx), int(player_cy), "grid", last_player_gx, last_player_gy)
+    else:
+        player_cx = -1
+        player_cy = -1
+        if DEBUG_TRACK:
+            print("PLAYER not found")
+
+    if need_pos_update:
+        send_pos_update(frame_id, out, last_car_x_mm, last_car_y_mm, last_car_theta_x10)
+        frame_id = (frame_id + 1) & 0xFF
+        last_pos_update_ms = now_ms
+
+    if need_full_map:
+        send_full_map(out, last_car_x_mm, last_car_y_mm, last_car_theta_x10)
+        full_map_requested = False
+
+    # 可选显示
+    if SHOW_CELL_CODES:
+        draw_cell_codes(img, out)
+
+    if DEBUG_TRACK:
+        draw_search_region(img)
+        draw_player_center(img)
+
+    if SHOW_FPS:
+        img.draw_string(2, 2, "FPS: %.1f" % clock.fps())

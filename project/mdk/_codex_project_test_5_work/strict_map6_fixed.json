@@ -1,0 +1,24 @@
+{
+  "started_at": "2026-07-18 09:03:13",
+  "results": [
+    {
+      "map": "map6.txt",
+      "status": "PASS",
+      "p1_seconds": 0.355,
+      "p1_raw_steps": 16,
+      "p1_structured_actions": 8,
+      "observed_boxes": [
+        0
+      ],
+      "observed_targets": [
+        0
+      ],
+      "assignments_tested": 2,
+      "max_p2_seconds": 0.089,
+      "total_seconds": 0.542
+    }
+  ],
+  "finished_at": "2026-07-18 09:03:14",
+  "passed": 1,
+  "failed": 0
+}

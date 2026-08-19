@@ -1,0 +1,42 @@
+{
+  "started_at": "2026-07-18 09:18:07",
+  "results": [
+    {
+      "map": "map6.txt",
+      "status": "PASS",
+      "p1_seconds": 0.363,
+      "p1_raw_steps": 16,
+      "p1_structured_actions": 8,
+      "observed_boxes": [
+        0
+      ],
+      "observed_targets": [
+        0
+      ],
+      "assignments_tested": 2,
+      "max_p2_seconds": 0.095,
+      "total_seconds": 0.553
+    },
+    {
+      "map": "map11.txt",
+      "status": "PASS",
+      "p1_seconds": 13.599,
+      "p1_raw_steps": 53,
+      "p1_structured_actions": 32,
+      "observed_boxes": [
+        1,
+        2
+      ],
+      "observed_targets": [
+        0,
+        1
+      ],
+      "assignments_tested": 6,
+      "max_p2_seconds": 0.106,
+      "total_seconds": 14.187
+    }
+  ],
+  "finished_at": "2026-07-18 09:18:21",
+  "passed": 2,
+  "failed": 0
+}

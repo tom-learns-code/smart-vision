@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:www.smartcarrace.com)",
+      "WebFetch(domain:blog.csdn.net)",
+      "WebFetch(domain:www.smartcar.zone)",
+      "WebFetch(domain:www.eet-china.com)",
+      "WebFetch(domain:cise.jsu.edu.cn)",
+      "WebFetch(domain:smartcar.cdstm.cn)",
+      "Bash(curl -sL --max-time 30 -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\)\" \"https://blog.csdn.net/zhuoqingjoking97298/article/details/154697884\" -o /tmp/csdn_article.html)",
+      "Bash(echo \"exit=$?\")",
+      "Read(//tmp/**)",
+      "Bash(curl -sL --max-time 40 \"https://r.jina.ai/https://blog.csdn.net/zhuoqingjoking97298/article/details/154697884\" -o /tmp/csdn_jina.txt)",
+      "Bash(curl -sL --max-time 90 \"https://r.jina.ai/https://blog.csdn.net/zhuoqingjoking97298/article/details/154697884\" -o /tmp/csdn_jina.txt -w \"http=%{http_code} time=%{time_total}s\\\\n\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('run_sim.py',encoding='utf-8'\\).read\\(\\)\\); print\\('run_sim.py 语法 OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('run_sim_debug.py',encoding='utf-8'\\).read\\(\\)\\); print\\('run_sim_debug.py 语法 OK'\\)\")",
+      "Bash(python run_solver.py \"maps_import/map3\\(4\\).txt\")",
+      "Bash(python -c ' *)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('algorithms/blast_refine.py',encoding='utf-8'\\).read\\(\\)\\); print\\('blast_refine.py 语法 OK'\\)\")",
+      "Bash(python _diag_deadpocket.py)",
+      "Bash(python run_solver.py \"maps_import/map3\\(1\\).txt\")"
+    ]
+  }
+}

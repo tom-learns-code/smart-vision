@@ -1,0 +1,22 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [{
+          "type": "command",
+          "command": "find . -type f -name \"*.py\" -not -path \"./__pycache__/*\" | sort > /tmp/harness_snapshot_py.txt"
+        }]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [{
+          "type": "command",
+          "command": "echo '=== 文件变动检查 ===' && (find . -type f -name \"*.py\" -not -path \"./__pycache__/*\" | sort | diff /tmp/harness_snapshot_py.txt - > /tmp/harness_diff.txt 2>&1 && echo '无变动' || (echo '项目 .py 文件有增删，建议更新 CLAUDE.md 目录指针和 .claudeignore 排除规则' && cat /tmp/harness_diff.txt)) && echo '' && echo '=== CLAUDE.md 反思 ===' && echo '建议问 Claude：回顾本次 session，有什么应该更新到 CLAUDE.md 的内容？'"
+        }]
+      }
+    ]
+  }
+}

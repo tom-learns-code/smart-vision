@@ -1,0 +1,6 @@
+PASS UP_cross40 along=0 cross=40 allow=0 expected=0
+PASS DOWN_short40 along=40 cross=0 allow=1 expected=1
+PASS LEFT_short120 along=120 cross=0 allow=1 expected=1
+PASS LEFT_overshoot40 along=-40 cross=0 allow=0 expected=0
+PASS RIGHT_cross80 along=40 cross=80 allow=0 expected=0
+SUMMARY pass=5/5

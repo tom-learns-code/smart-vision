@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="surface">#10131A</color>
+    <color name="panel">#181D27</color>
+    <color name="panel_stroke">#2A3445</color>
+    <color name="text_primary">#F3F6FB</color>
+    <color name="text_secondary">#A9B4C7</color>
+    <color name="accent">#FF6E7F</color>
+    <color name="overlay_bg">#D92A0F16</color>
+    <color name="overlay_stroke">#66FF6E7F</color>
+    <color name="system_bar">#10131A</color>
+</resources>

@@ -1,0 +1,13 @@
+{
+  "started_at": "2026-07-18 09:18:33",
+  "results": [
+    {
+      "map": "map7.txt",
+      "status": "FAIL",
+      "error": "ValidationError: map7.txt: P1 failed: P1 无解"
+    }
+  ],
+  "finished_at": "2026-07-18 09:18:33",
+  "passed": 0,
+  "failed": 1
+}

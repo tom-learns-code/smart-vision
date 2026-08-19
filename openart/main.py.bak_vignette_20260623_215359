@@ -1,0 +1,1136 @@
+# ============================================================
+# OpenART Plus 视觉层 — 完整集成版
+#
+# 合并内容:
+#   - 识别代码.py : 完整视觉检测逻辑（车/箱子/炸弹/墙壁/目标）
+#   - untitled_1.py : 二进制 UART 协议（FULL_MAP/POS_UPDATE/MAP_REQUEST）
+#
+# 协议与 MCU vision_parser.c 逐字段对齐。
+# ============================================================
+
+import sensor
+import image
+import time
+import math
+from machine import UART
+
+
+# ============================================================
+# 0. 协议常量（与 MCU vision_parser.h 对齐）
+# ============================================================
+VP_HEADER_0       = 0xA5
+VP_HEADER_1       = 0x5A
+VP_TYPE_FULL_MAP   = 0x01
+VP_TYPE_POS_UPDATE = 0x02
+VP_TYPE_MAP_REQUEST = 0x03
+VP_TYPE_HEARTBEAT  = 0x04
+
+UART_BAUDRATE      = 115200
+HEARTBEAT_PERIOD_MS = 500
+UART_CANDIDATES    = (5, 12, 11)       # 逐个尝试，连接上的那个就是对的
+MCU_MAX_BOXES       = 3
+
+
+# ============================================================
+# 1. 摄像头 / 地图常量
+# ============================================================
+sensor.reset()
+sensor.set_pixformat(sensor.RGB565)
+sensor.set_framesize(sensor.QVGA)       # 320×240
+sensor.skip_frames(time=2000)
+sensor.set_auto_gain(False)
+sensor.set_auto_whitebal(False)
+
+# 地图四角在图像中的像素坐标（手动标定）
+LT = (12, 12)
+RT = (311, 6)
+RB = (314, 231)
+LB = (10, 225)
+
+COLS = 16
+ROWS = 12
+GRID_SIZE_MM = 200
+
+SCALE = 10          # 10 采样点/格 → 0.1 格分辨率
+MAP_W = COLS * SCALE
+MAP_H = ROWS * SCALE
+
+MIN_BOX_PIXELS  = 8
+MIN_BOMB_PIXELS = 6
+MIN_CAR_PIXELS  = 6
+
+# 车头-车尾配对距离筛选（格，每格 = 200mm）
+CAR_MARKER_MIN_DIST = 0.2   # 小于此距离视为同一色块/双重分类
+CAR_MARKER_MAX_DIST = 2.0   # 大于此距离不可能是一辆车
+
+MAX_CAR_HOLD_FRAMES    = 5
+POS_UPDATE_PERIOD_MS   = 50   # POS_UPDATE 周期 (20 Hz)
+
+# ----- 调试开关 -----
+PRINT_DEBUG        = True        # 终端打印人类可读信息
+DRAW_DEBUG_OVERLAY = False       # 图像上画标记（会降帧率）
+DRAW_GRID_POINTS    = False        # 在图像上绘制网格交叉点（传到PC查看）
+
+# ----- 近距物体跟踪 -----
+NEAR_OBJECT_TRACKING           = True
+NEAR_OBJECT_RADIUS_CELLS       = 3.0
+NEAR_OBJECT_PREPARE_RADIUS_CELLS = 4.0
+CAR_TRACK_RADIUS_CELLS         = 2.5
+
+# ----- 分类常量 -----
+CLS_NONE      = 0
+CLS_BOX       = 1
+CLS_BOMB_RED  = 2
+CLS_BOMB_DARK = 3
+CLS_CAR_FRONT = 4
+CLS_CAR_BACK  = 5
+
+
+# ============================================================
+# 2. UART 初始化（CMM 配置 + 逐个尝试候选 UART）
+# ============================================================
+
+CMM_LINES = (
+    "hw,-,-,rt117x,seekfree_art_plus,",
+    "uart,5,TXD,-,AD_28,",
+    "uart,5,RXD,-,AD_29,",
+    "uart,11,TXD,-,LPSR_04,",
+    "uart,11,RXD,-,LPSR_05,",
+    "uart,12,TXD,-,LPSR_06,",
+    "uart,12,RXD,-,LPSR_07,",
+)
+
+CMM_CFG = """fn,unit,signal,hint,pinobj,comments
+hw,-,-,rt117x,seekfree_art_plus,
+led,1,-,-,DISP_B2_03,
+led,2,-,-,DISP_B1_07,
+led,3,-,-,DISP_B1_05,
+led,4,-,-,DISP_B2_08,
+pin,-,J25,-,AD_26,
+pin,-,J26,-,AD_27,
+pin,-,J27,-,AD_28,
+pin,-,J28,-,AD_29,
+pin,-,M12,-,LPSR_12,
+pin,-,M11,-,LPSR_11,
+pin,-,M10,-,LPSR_10,
+pin,-,M9,-,LPSR_09,
+pin,-,M4,-,LPSR_04,
+pin,-,M5,-,LPSR_05,
+pin,-,J6,-,AD_07,
+adc,-,A0,1,AD_26,
+adc,-,A1,1,AD_27,
+adc,-,A2,1,AD_28,
+adc,-,A3,1,AD_29,
+pwm,-,CH1,f2.a1,AD_26,
+pwm,-,CH2,f2.b1,AD_27,
+pwm,-,CH3,f2.a2,AD_28,
+pwm,-,CH4,f2.b2,AD_29,
+uart,5,TXD,-,AD_28,
+uart,5,RXD,-,AD_29,
+uart,11,TXD,-,LPSR_04,
+uart,11,RXD,-,LPSR_05,
+uart,12,TXD,-,LPSR_06,
+uart,12,RXD,-,LPSR_07,
+i2c,5,SDA,-,LPSR_04,
+i2c,5,SCL,-,LPSR_05,
+i2c,6,SDA,-,LPSR_06,
+i2c,6,SCL,-,LPSR_07,
+spi,6,SCK,-,LPSR_10,
+spi,6,PCS0,-,LPSR_09,
+spi,6,SDO,-,LPSR_11,
+spi,6,SDI,-,LPSR_12,
+"""
+
+
+def load_cmm_config():
+    try:
+        from machine import Pin
+        import cmm
+        cmap = {}
+        for sLine in CMM_LINES:
+            lst = sLine.split(",")
+            if lst[1] == "-":
+                comboName = lst[0] + "." + lst[2]
+            else:
+                comboName = lst[0] + "." + lst[1] + "." + lst[2]
+            try:
+                pin = Pin(lst[4])
+            except Exception:
+                pin = None
+            cmap[comboName] = (lst[3], lst[4], pin, None)
+        cmm.add(cmap)
+        print("cmm.add OK")
+        return
+    except Exception as e:
+        print("direct cmm.add failed:", e)
+    try:
+        import cmm_load
+        cmm_load.load()
+        print("cmm_load OK")
+        return
+    except Exception as e:
+        print("import cmm_load failed:", e)
+    try:
+        for path in ("/cmm_load.py", "cmm_load.py", "/flash/cmm_load.py"):
+            try:
+                exec(open(path).read(), globals())
+                loader = globals().get("load", None)
+                if loader is None:
+                    raise Exception("load missing")
+                loader()
+                print(path, "OK")
+                return
+            except Exception as ee:
+                print(path, "failed:", ee)
+    except Exception as e:
+        print("cmm load failed:", e)
+
+
+# 写 CMM 配置文件
+for path in ("/cmm_cfg.csv", "cmm_cfg.csv", "/flash/cmm_cfg.csv"):
+    try:
+        with open(path, "w") as f:
+            f.write(CMM_CFG)
+        print("WROTE", path)
+    except Exception as e:
+        print("SKIP", path, e)
+
+load_cmm_config()
+
+
+# 尝试打开 UART
+g_uart = None
+g_uart_ports = []
+
+for uart_id in UART_CANDIDATES:
+    try:
+        u = UART(uart_id, baudrate=UART_BAUDRATE)
+        g_uart_ports.append([uart_id, u, bytearray()])
+        print("UART%d OK -> added for MCU broadcast" % uart_id)
+    except Exception as e:
+        print("UART%d NO: %s" % (uart_id, e))
+
+if not g_uart_ports:
+    raise Exception("No UART opened - check wiring")
+
+g_uart = g_uart_ports[0][1]
+
+
+def uart_write_all(pkt):
+    sent = 0
+    for port in g_uart_ports:
+        try:
+            port[1].write(pkt)
+            sent += 1
+        except Exception as e:
+            if PRINT_DEBUG:
+                print("UART%d write failed: %s" % (port[0], e))
+    return sent
+
+
+# ============================================================
+# 3. 二进制协议打包工具
+# ============================================================
+
+def xor_checksum(data):
+    cs = 0
+    for b in data:
+        cs ^= b
+    return cs & 0xFF
+
+
+def append_i16(buf, value):
+    value &= 0xFFFF
+    buf.append(value & 0xFF)
+    buf.append((value >> 8) & 0xFF)
+
+
+def append_i8(buf, value):
+    buf.append(value & 0xFF)
+
+
+def make_full_map_binary(grid, goals, boxes, bombs, car):
+    """生成 FULL_MAP 二进制包（59 字节，与 MCU vision_parser 对齐）"""
+    payload = bytearray()
+    payload.append(COLS)     # map_width
+    payload.append(ROWS)     # map_height
+
+    # 墙体位图: 192 bits → 24 bytes, LSB 优先
+    walls = bytearray(24)
+    for row in range(ROWS):
+        for col in range(COLS):
+            if grid[row][col] == "#":
+                idx = row * COLS + col
+                walls[idx >> 3] |= 1 << (idx & 7)
+    payload.extend(walls)
+
+    # 箱子: 最多 4 个, int8 格坐标, 空位填 -1
+    box_count = len(boxes) if len(boxes) <= MCU_MAX_BOXES else MCU_MAX_BOXES
+    payload.append(box_count)
+    for i in range(4):
+        if i < box_count:
+            append_i8(payload, clamp_cell_x(boxes[i][0]))
+            append_i8(payload, clamp_cell_y(boxes[i][1]))
+        else:
+            append_i8(payload, -1)
+            append_i8(payload, -1)
+
+    # 目标: 最多 4 个, int8 格坐标
+    goal_count = len(goals) if len(goals) <= MCU_MAX_BOXES else MCU_MAX_BOXES
+    payload.append(goal_count)
+    for i in range(4):
+        if i < goal_count:
+            append_i8(payload, goals[i][0])
+            append_i8(payload, goals[i][1])
+        else:
+            append_i8(payload, -1)
+            append_i8(payload, -1)
+
+    # 炸弹: 最多 2 个
+    bomb_count = len(bombs) if len(bombs) <= 2 else 2
+    payload.append(bomb_count)
+    for i in range(2):
+        if i < bomb_count:
+            append_i8(payload, clamp_cell_x(bombs[i][0]))
+            append_i8(payload, clamp_cell_y(bombs[i][1]))
+        else:
+            append_i8(payload, -1)
+            append_i8(payload, -1)
+
+    # 车位姿 (mm, deg×10 → int16 LE)
+    if car is not None:
+        append_i16(payload, grid_to_mm(car[0]))
+        append_i16(payload, grid_to_mm(car[1]))
+        append_i16(payload, deg_to_x10(car[2]))
+    else:
+        append_i16(payload, 0)
+        append_i16(payload, 0)
+        append_i16(payload, 0)
+
+    payload.append(xor_checksum(payload))
+    return bytearray([VP_HEADER_0, VP_HEADER_1, VP_TYPE_FULL_MAP]) + payload
+
+
+def make_pos_update_binary(frame_id, car, near_boxes, near_bombs):
+    """生成 POS_UPDATE 二进制包（与 MCU vision_parser 对齐）
+
+    MCU parse_byte() 固定读 VP_POS_UPDATE_LEN-3 = 19 字节 payload。
+    必须精确 19 字节，否则后续帧解析错位。
+    """
+    payload = bytearray()
+    payload.append(frame_id & 0xFF)
+
+    if car is not None:
+        append_i16(payload, grid_to_mm(car[0]))
+        append_i16(payload, grid_to_mm(car[1]))
+        append_i16(payload, deg_to_x10(car[2]))
+    else:
+        append_i16(payload, 0)
+        append_i16(payload, 0)
+        append_i16(payload, 0)
+
+    # 箱子: 最多 3 个，留出空间给 bomb_count + padding
+    box_count = len(near_boxes) if len(near_boxes) <= 3 else 3
+    payload.append(box_count)
+    for i in range(box_count):
+        append_i8(payload, clamp_cell_x(near_boxes[i][0]))
+        append_i8(payload, clamp_cell_y(near_boxes[i][1]))
+
+    # 炸弹: 填 0（如需传炸弹可改为 1，但需对应减少箱子数量）
+    payload.append(0)
+
+    # 填充到 18 字节（checksum 在第 19 字节即索引 18）
+    while len(payload) < 18:
+        payload.append(0)
+
+    payload.append(xor_checksum(payload))
+    return bytearray([VP_HEADER_0, VP_HEADER_1, VP_TYPE_POS_UPDATE]) + payload
+
+
+def make_heartbeat_binary(seq):
+    payload = bytearray()
+    payload.append(seq & 0xFF)
+    payload.append(xor_checksum(payload))
+    return bytearray([VP_HEADER_0, VP_HEADER_1, VP_TYPE_HEARTBEAT]) + payload
+
+
+# ============================================================
+# 4. MAP_REQUEST 监听
+# ============================================================
+
+g_full_map_requested = False
+
+
+def poll_request():
+    """读取 UART，检测 0x03 请求包 → 标记需要回复 FULL_MAP"""
+    global g_uart_ports, g_full_map_requested
+
+    for port in g_uart_ports:
+        uart_id = port[0]
+        uart = port[1]
+        rx_buf = port[2]
+
+        if uart.any():
+            data = uart.read()
+            if data:
+                for b in data:
+                    rx_buf.append(b)
+
+        while len(rx_buf) >= 5:
+            if rx_buf[0] != VP_HEADER_0 or rx_buf[1] != VP_HEADER_1:
+                rx_buf = rx_buf[1:]
+                continue
+            pkt = rx_buf[:5]
+            if pkt[2] == VP_TYPE_MAP_REQUEST and xor_checksum(pkt[:4]) == pkt[4]:
+                g_full_map_requested = True
+                if PRINT_DEBUG:
+                    print("RCVD MAP_REQUEST uart=%d reason=%d" % (uart_id, pkt[3]))
+                rx_buf = rx_buf[5:]
+            else:
+                rx_buf = rx_buf[1:]
+
+        if len(rx_buf) > 32:
+            rx_buf = rx_buf[-16:]
+        port[2] = rx_buf
+
+
+# ============================================================
+# 5. 坐标 / 颜色 / 工具函数（来自 识别代码.py，不变）
+# ============================================================
+
+def lerp(a, b, t):
+    return a + (b - a) * t
+
+
+def screen_point_from_uv(u, v):
+    top_x = lerp(LT[0], RT[0], u)
+    top_y = lerp(LT[1], RT[1], u)
+    bottom_x = lerp(LB[0], RB[0], u)
+    bottom_y = lerp(LB[1], RB[1], u)
+    x = lerp(top_x, bottom_x, v)
+    y = lerp(top_y, bottom_y, v)
+    return int(x), int(y)
+
+
+def screen_point_from_map(mx, my):
+    return screen_point_from_uv(mx / COLS, my / ROWS)
+
+
+def clamp_cell_x(x):
+    if x < 0:        return 0
+    if x >= COLS:    return COLS - 1
+    return int(x)
+
+
+def clamp_cell_y(y):
+    if y < 0:        return 0
+    if y >= ROWS:    return ROWS - 1
+    return int(y)
+
+
+def grid_to_mm(g):
+    return int(g * GRID_SIZE_MM + 0.5)
+
+
+def deg_to_x10(deg):
+    return int(deg * 10 + 0.5)
+
+
+def grid_to_x10(g):
+    return int(g * 10 + 0.5)
+
+
+# ----- 颜色判定 -----
+
+YELLOW_L_MIN, YELLOW_L_MAX = 50, 100
+YELLOW_A_MIN, YELLOW_A_MAX = -30, 20
+YELLOW_B_MIN, YELLOW_B_MAX = 11, 127
+
+MAGENTA_L_MIN, MAGENTA_L_MAX = 0, 100
+MAGENTA_A_MIN, MAGENTA_A_MAX = 92, 127
+MAGENTA_B_MIN, MAGENTA_B_MAX = -128, 127
+
+RED_L_MIN, RED_L_MAX = 40, 70
+RED_A_MIN, RED_A_MAX = 60, 100
+RED_B_MIN, RED_B_MAX = -50, 127
+
+
+def is_yellow(r, g, b):
+    l, a_val, b_val = image.rgb_to_lab((r, g, b))
+    return (YELLOW_L_MIN <= l <= YELLOW_L_MAX and
+            YELLOW_A_MIN <= a_val <= YELLOW_A_MAX and
+            YELLOW_B_MIN <= b_val <= YELLOW_B_MAX)
+
+
+def is_red_or_orange(r, g, b):
+    l, a_val, b_val = image.rgb_to_lab((r, g, b))
+    return (RED_L_MIN <= l <= RED_L_MAX and
+            RED_A_MIN <= a_val <= RED_A_MAX and
+            RED_B_MIN <= b_val <= RED_B_MAX)
+
+
+def is_dark(r, g, b):
+    return (r + g + b) < 70
+
+
+# ----- 青色标记（车头）LAB 阈值（双阈值 OR，覆盖正常光照 + 图像边缘发黑）-----
+CYAN1_L_MIN, CYAN1_L_MAX = 48, 83
+CYAN1_A_MIN, CYAN1_A_MAX = -128, -7
+CYAN1_B_MIN, CYAN1_B_MAX = -54, -1
+
+CYAN2_L_MIN, CYAN2_L_MAX = 75, 100
+CYAN2_A_MIN, CYAN2_A_MAX = -70, -25
+CYAN2_B_MIN, CYAN2_B_MAX = -40, 39
+
+# ----- 绿色标记（车尾）LAB 阈值（双阈值 OR，覆盖正常光照 + 图像边缘发黑）-----
+GREEN1_L_MIN, GREEN1_L_MAX = 43, 73
+GREEN1_A_MIN, GREEN1_A_MAX = -86, -16
+GREEN1_B_MIN, GREEN1_B_MAX = -5, 70
+
+GREEN2_L_MIN, GREEN2_L_MAX = 77, 100
+GREEN2_A_MIN, GREEN2_A_MAX = -89, -33
+GREEN2_B_MIN, GREEN2_B_MAX = 19, 115
+
+
+def is_cyan_marker(r, g, b):
+    """LAB 颜色空间判定青色标记（车头），双阈值 OR"""
+    l, a_val, b_val = image.rgb_to_lab((r, g, b))
+    return ((CYAN1_L_MIN <= l <= CYAN1_L_MAX and
+             CYAN1_A_MIN <= a_val <= CYAN1_A_MAX and
+             CYAN1_B_MIN <= b_val <= CYAN1_B_MAX) or
+            (CYAN2_L_MIN <= l <= CYAN2_L_MAX and
+             CYAN2_A_MIN <= a_val <= CYAN2_A_MAX and
+             CYAN2_B_MIN <= b_val <= CYAN2_B_MAX))
+
+
+def is_green_marker(r, g, b):
+    """LAB 颜色空间判定绿色标记（车尾），双阈值 OR"""
+    l, a_val, b_val = image.rgb_to_lab((r, g, b))
+    return ((GREEN1_L_MIN <= l <= GREEN1_L_MAX and
+             GREEN1_A_MIN <= a_val <= GREEN1_A_MAX and
+             GREEN1_B_MIN <= b_val <= GREEN1_B_MAX) or
+            (GREEN2_L_MIN <= l <= GREEN2_L_MAX and
+             GREEN2_A_MIN <= a_val <= GREEN2_A_MAX and
+             GREEN2_B_MIN <= b_val <= GREEN2_B_MAX))
+
+
+def is_magenta_goal(r, g, b):
+    l, a_val, b_val = image.rgb_to_lab((r, g, b))
+    return (MAGENTA_L_MIN <= l <= MAGENTA_L_MAX and
+            MAGENTA_A_MIN <= a_val <= MAGENTA_A_MAX and
+            MAGENTA_B_MIN <= b_val <= MAGENTA_B_MAX)
+
+
+# ----- 墙体 LAB 阈值 -----
+WALL_L_MIN, WALL_L_MAX = 19, 100
+WALL_A_MIN, WALL_A_MAX = -10, 65
+WALL_B_MIN, WALL_B_MAX = -70, 6
+
+
+def is_gray_wall(r, g, b):
+    """LAB 颜色空间判定墙体（替代原 RGB 阈值）
+
+    阈值 (L:19~100, A:-10~65, B:-70~6) 对光照变化更鲁棒。
+    """
+    l, a_val, b_val = image.rgb_to_lab((r, g, b))
+    return (WALL_L_MIN <= l <= WALL_L_MAX and
+            WALL_A_MIN <= a_val <= WALL_A_MAX and
+            WALL_B_MIN <= b_val <= WALL_B_MAX)
+
+
+def is_blue_floor(r, g, b):
+    return b > 75 and b > r + 12
+
+
+def classify_dynamic_rgb(r, g, b):
+    if is_yellow(r, g, b):
+        return CLS_BOX
+    if is_red_or_orange(r, g, b):
+        return CLS_BOMB_RED
+    if is_cyan_marker(r, g, b):
+        return CLS_CAR_FRONT
+    if is_green_marker(r, g, b):
+        return CLS_CAR_BACK
+    return CLS_NONE
+
+
+def classify_cell_rgb(r, g, b):
+    if is_yellow(r, g, b):
+        return "$"
+    if is_red_or_orange(r, g, b):
+        return "!"
+    if is_gray_wall(r, g, b):
+        return "#"
+    if is_magenta_goal(r, g, b):
+        return "."
+    if is_blue_floor(r, g, b):
+        return "-"
+    return "-"
+
+
+# ----- RGB 采样 -----
+
+def avg_rgb_at_uv(img, u, v):
+    total_r, total_g, total_b, count = 0, 0, 0, 0
+    offsets = ((0, 0), (-1, 0), (1, 0), (0, -1), (0, 1))
+    cx, cy = screen_point_from_uv(u, v)
+    for off in offsets:
+        x = cx + off[0]
+        y = cy + off[1]
+        if x < 0 or x >= 320 or y < 0 or y >= 240:
+            continue
+        r, g, b = img.get_pixel(x, y)
+        total_r += r; total_g += g; total_b += b
+        count += 1
+    if count == 0:
+        return 0, 0, 0
+    return total_r // count, total_g // count, total_b // count
+
+
+def avg_rgb_at_cell(img, col, row):
+    u = (col + 0.5) / COLS
+    v = (row + 0.5) / ROWS
+    return avg_rgb_at_uv(img, u, v)
+
+
+# ============================================================
+# 6. 分类图 + 连通分量（来自 识别代码.py，不变）
+# ============================================================
+
+def build_dynamic_class_map(img):
+    cls_map = bytearray(MAP_W * MAP_H)
+    for sy in range(MAP_H):
+        v = (sy + 0.5) / MAP_H
+        for sx in range(MAP_W):
+            u = (sx + 0.5) / MAP_W
+            x, y = screen_point_from_uv(u, v)
+            r, g, b = img.get_pixel(x, y)
+            cls_map[sy * MAP_W + sx] = classify_dynamic_rgb(r, g, b)
+    return cls_map
+
+
+def build_region_class_map(img, center, radius_cells):
+    if center is None:
+        x0, y0 = 0, 0
+        x1, y1 = MAP_W, MAP_H
+    else:
+        cx = int(center[0] * SCALE)
+        cy = int(center[1] * SCALE)
+        r  = int(radius_cells * SCALE)
+        x0 = cx - r if cx - r > 0 else 0
+        y0 = cy - r if cy - r > 0 else 0
+        x1 = cx + r if cx + r < MAP_W else MAP_W
+        y1 = cy + r if cy + r < MAP_H else MAP_H
+
+    width  = x1 - x0
+    height = y1 - y0
+    cls_map = bytearray(width * height)
+
+    for sy in range(height):
+        map_y = y0 + sy
+        v = (map_y + 0.5) / MAP_H
+        for sx in range(width):
+            map_x = x0 + sx
+            u = (map_x + 0.5) / MAP_W
+            x, y = screen_point_from_uv(u, v)
+            r, g, b = img.get_pixel(x, y)
+            cls_map[sy * width + sx] = classify_dynamic_rgb(r, g, b)
+
+    return cls_map, width, height, x0, y0
+
+
+def find_components(cls_map, target_cls, min_pixels, ignore_border=False):
+    visited = bytearray(MAP_W * MAP_H)
+    comps = []
+
+    for start in range(MAP_W * MAP_H):
+        if visited[start] or cls_map[start] != target_cls:
+            continue
+
+        stack = [start]
+        visited[start] = 1
+        count, sum_x, sum_y = 0, 0, 0
+        min_x, max_x = MAP_W, 0
+        min_y, max_y = MAP_H, 0
+
+        while stack:
+            idx = stack.pop()
+            x = idx % MAP_W
+            y = idx // MAP_W
+            count += 1
+            sum_x += x; sum_y += y
+            if x < min_x: min_x = x
+            if x > max_x: max_x = x
+            if y < min_y: min_y = y
+            if y > max_y: max_y = y
+
+            if x > 0:
+                n = idx - 1
+                if not visited[n] and cls_map[n] == target_cls:
+                    visited[n] = 1; stack.append(n)
+            if x < MAP_W - 1:
+                n = idx + 1
+                if not visited[n] and cls_map[n] == target_cls:
+                    visited[n] = 1; stack.append(n)
+            if y > 0:
+                n = idx - MAP_W
+                if not visited[n] and cls_map[n] == target_cls:
+                    visited[n] = 1; stack.append(n)
+            if y < MAP_H - 1:
+                n = idx + MAP_W
+                if not visited[n] and cls_map[n] == target_cls:
+                    visited[n] = 1; stack.append(n)
+
+        if count < min_pixels:
+            continue
+
+        cx = (sum_x / count + 0.5) / SCALE
+        cy = (sum_y / count + 0.5) / SCALE
+
+        if ignore_border:
+            if cx < 0.4 or cx > COLS - 0.4 or cy < 0.4 or cy > ROWS - 0.4:
+                continue
+
+        comps.append((cx, cy, count, min_x, min_y, max_x, max_y))
+
+    comps.sort(key=lambda item: item[2], reverse=True)
+    return comps
+
+
+def find_components_region(cls_map, width, height, origin_x, origin_y,
+                           target_cls, min_pixels):
+    visited = bytearray(width * height)
+    comps = []
+
+    for start in range(width * height):
+        if visited[start] or cls_map[start] != target_cls:
+            continue
+
+        stack = [start]
+        visited[start] = 1
+        count, sum_x, sum_y = 0, 0, 0
+        min_x, max_x = width, 0
+        min_y, max_y = height, 0
+
+        while stack:
+            idx = stack.pop()
+            x = idx % width
+            y = idx // width
+            count += 1
+            sum_x += x; sum_y += y
+            if x < min_x: min_x = x
+            if x > max_x: max_x = x
+            if y < min_y: min_y = y
+            if y > max_y: max_y = y
+
+            if x > 0:
+                n = idx - 1
+                if not visited[n] and cls_map[n] == target_cls:
+                    visited[n] = 1; stack.append(n)
+            if x < width - 1:
+                n = idx + 1
+                if not visited[n] and cls_map[n] == target_cls:
+                    visited[n] = 1; stack.append(n)
+            if y > 0:
+                n = idx - width
+                if not visited[n] and cls_map[n] == target_cls:
+                    visited[n] = 1; stack.append(n)
+            if y < height - 1:
+                n = idx + width
+                if not visited[n] and cls_map[n] == target_cls:
+                    visited[n] = 1; stack.append(n)
+
+        if count < min_pixels:
+            continue
+
+        cx = (origin_x + sum_x / count + 0.5) / SCALE
+        cy = (origin_y + sum_y / count + 0.5) / SCALE
+        comps.append((cx, cy, count,
+                       origin_x + min_x, origin_y + min_y,
+                       origin_x + max_x, origin_y + max_y))
+
+    comps.sort(key=lambda item: item[2], reverse=True)
+    return comps
+
+
+# ----- 辅助筛选 -----
+
+def top_n(comps, n):
+    return comps[:n] if len(comps) > n else comps
+
+
+def sort_by_position(comps):
+    comps.sort(key=lambda item: int(item[1] * 10) * 1000 + int(item[0] * 10))
+    return comps
+
+
+def largest(comps):
+    return comps[0] if comps else None
+
+
+def dist_cells(a, b):
+    dx = a[0] - b[0]
+    dy = a[1] - b[1]
+    return math.sqrt(dx * dx + dy * dy)
+
+
+def filter_near_components(comps, car, radius_cells, max_count):
+    if car is None:
+        return []
+    out = []
+    for comp in comps:
+        d = dist_cells((comp[0], comp[1]), car)
+        if d <= radius_cells:
+            out.append((comp[0], comp[1], comp[2], comp[3], comp[4], comp[5], comp[6], d))
+    out.sort(key=lambda item: item[7])
+    return out[:max_count] if len(out) > max_count else out
+
+
+# ============================================================
+# 7. 车 / 目标检测（来自 识别代码.py，不变）
+# ============================================================
+
+def car_pose(front, back):
+    if front is None or back is None:
+        return None
+    car_x = (front[0] + back[0]) / 2
+    car_y = (front[1] + back[1]) / 2
+    dx = front[0] - back[0]
+    dy = front[1] - back[1]
+    # 0° = 朝上（grid y 减小），90° = 朝右（grid x 增大）
+    angle = math.atan2(dx, -dy) * 57.2957795
+    if angle < 0:
+        angle += 360
+    return car_x, car_y, angle
+
+
+def find_best_car_pair(fronts, backs, min_dist, max_dist):
+    """在所有(车头,车尾)色块对中找距离最合理的一对，返回 car_pose 或 None
+
+    替代原来的 largest() 分别取最大车头/车尾的方式。
+    只有车头车尾空间距离在 [min_dist, max_dist] 范围内才认为有效。
+    多对候选时选距离最近的一对。
+    """
+    if not fronts or not backs:
+        return None
+
+    best_pair = None
+    best_dist = 999.0
+
+    for f in fronts:
+        fx, fy = f[0], f[1]
+        for b in backs:
+            bx, by = b[0], b[1]
+            d = math.sqrt((fx - bx) ** 2 + (fy - by) ** 2)
+            if min_dist <= d <= max_dist and d < best_dist:
+                best_dist = d
+                best_pair = (f, b)
+
+    if best_pair:
+        return car_pose(best_pair[0], best_pair[1])
+    return None
+
+
+def detect_goals_from_grid(grid):
+    goals = []
+
+    for row in range(1, ROWS - 1):
+        for col in range(1, COLS - 1):
+            if grid[row][col] == ".":
+                goals.append((col, row))
+                if len(goals) >= MCU_MAX_BOXES:
+                    return goals
+
+    return goals
+
+
+def detect_boxes_from_grid(grid):
+    points = []
+    for row in range(1, ROWS - 1):
+        for col in range(1, COLS - 1):
+            if grid[row][col] != "$":
+                continue
+
+            merged = False
+            for p in points:
+                dx = p[0] - col
+                dy = p[1] - row
+                if dx < 0:
+                    dx = -dx
+                if dy < 0:
+                    dy = -dy
+                if dx <= 1 and dy <= 1:
+                    merged = True
+                    break
+
+            if not merged:
+                points.append((col, row))
+                if len(points) >= MCU_MAX_BOXES:
+                    return points
+    return points
+
+
+# ============================================================
+# 8. 全图网格生成（来自 识别代码.py，不变）
+# ============================================================
+
+def make_full_map_grid(img, boxes, bombs, car):
+    grid = []
+    for row in range(ROWS):
+        line = []
+        for col in range(COLS):
+            r, g, b = avg_rgb_at_cell(img, col, row)
+            line.append(classify_cell_rgb(r, g, b))
+        grid.append(line)
+
+    for comp in bombs:
+        x = clamp_cell_x(comp[0])
+        y = clamp_cell_y(comp[1])
+        grid[y][x] = "!"
+
+    for comp in boxes:
+        x = clamp_cell_x(comp[0])
+        y = clamp_cell_y(comp[1])
+        grid[y][x] = "$"
+
+    if car is not None:
+        x = clamp_cell_x(car[0])
+        y = clamp_cell_y(car[1])
+        grid[y][x] = "@"
+
+    goals = detect_goals_from_grid(grid)
+    return grid, goals
+
+
+# ============================================================
+# 9. 调试绘制（来自 识别代码.py，不变）
+# ============================================================
+
+def draw_component(img, comp, color):
+    x, y = screen_point_from_map(comp[0], comp[1])
+    img.draw_cross(x, y, color=color, size=5)
+    img.draw_circle(x, y, 4, color=color)
+
+
+def draw_car(img, car):
+    if car is None:
+        return
+    x, y = screen_point_from_map(car[0], car[1])
+    img.draw_cross(x, y, color=(255, 255, 255), size=6)
+    end_x = car[0] + math.sin(car[2] / 57.2957795) * 0.7
+    end_y = car[1] - math.cos(car[2] / 57.2957795) * 0.7
+    px, py = screen_point_from_map(end_x, end_y)
+    img.draw_line(x, y, px, py, color=(255, 255, 255))
+
+
+def draw_grid(img):
+    img.draw_line(LT[0], LT[1], RT[0], RT[1], color=(0, 255, 0))
+    img.draw_line(RT[0], RT[1], RB[0], RB[1], color=(0, 255, 0))
+    img.draw_line(RB[0], RB[1], LB[0], LB[1], color=(0, 255, 0))
+    img.draw_line(LB[0], LB[1], LT[0], LT[1], color=(0, 255, 0))
+    for col in range(COLS + 1):
+        u = col / COLS
+        x1, y1 = screen_point_from_uv(u, 0)
+        x2, y2 = screen_point_from_uv(u, 1)
+        img.draw_line(x1, y1, x2, y2, color=(0, 90, 0))
+    for row in range(ROWS + 1):
+        v = row / ROWS
+        x1, y1 = screen_point_from_uv(0, v)
+        x2, y2 = screen_point_from_uv(1, v)
+        img.draw_line(x1, y1, x2, y2, color=(0, 90, 0))
+
+
+def draw_grid_points(img, color=(0, 255, 0), size=2):
+    """绘制所有网格交叉点（17×13 个点）
+
+    格点即 (col, row) 的整数交叉处，共 (COLS+1)×(ROWS+1) 个。
+    便于在 PC 端 IDE 上直观查看网格覆盖是否准确。
+    """
+    for col in range(COLS + 1):
+        u = col / COLS
+        for row in range(ROWS + 1):
+            v = row / ROWS
+            x, y = screen_point_from_uv(u, v)
+            img.draw_cross(x, y, color=color, size=size)
+
+
+# ============================================================
+# 10. 调试打印（简化版）
+# ============================================================
+
+def debug_print_full_map(frame_id, grid, goals, boxes, bombs, car):
+    print("==== FULL_MAP frame=%d ====" % frame_id)
+    print("size=%dx%d" % (COLS, ROWS))
+    for row in range(ROWS):
+        print("".join(grid[row]))
+    print("boxes=%d" % len(boxes))
+    for i in range(len(boxes)):
+        b = boxes[i]
+        print("  box%d: (%d,%d)" % (i, clamp_cell_x(b[0]), clamp_cell_y(b[1])))
+    print("goals=%d" % len(goals))
+    for i, g in enumerate(goals):
+        print("  goal%d: (%d,%d)" % (i, g[0], g[1]))
+    print("bombs=%d" % len(bombs))
+    for i in range(len(bombs)):
+        b = bombs[i]
+        print("  bomb%d: (%d,%d)" % (i, clamp_cell_x(b[0]), clamp_cell_y(b[1])))
+    if car is not None:
+        print("car: grid=(%.1f,%.1f) mm=(%d,%d) theta=%.1f" %
+              (car[0], car[1], grid_to_mm(car[0]), grid_to_mm(car[1]), car[2]))
+    else:
+        print("car: none")
+
+
+# ============================================================
+# 11. 主循环
+# ============================================================
+
+print("openart integrated visual layer ready")
+print("UART baud=%d  POS_UPDATE=%d ms  FULL_MAP on MAP_REQUEST" %
+      (UART_BAUDRATE, POS_UPDATE_PERIOD_MS))
+
+frame_id = 0
+last_car = None
+car_missing_frames = 0
+last_pos_update_ms = 0
+last_heartbeat_ms = 0
+heartbeat_seq = 100
+g_full_map_requested = False
+last_map_boxes = []
+
+
+while True:
+    img = sensor.snapshot()
+    now_ms = time.ticks_ms()
+
+    # ----- 11a. 监听 MCU 的 MAP_REQUEST -----
+    poll_request()
+
+    if time.ticks_diff(now_ms, last_heartbeat_ms) >= HEARTBEAT_PERIOD_MS:
+        last_heartbeat_ms = now_ms
+        uart_write_all(make_heartbeat_binary(heartbeat_seq))
+        heartbeat_seq = (heartbeat_seq + 1) & 0xFF
+
+    # ----- 11b. 车 + 近距物体检测（区域搜索，快）-----
+    search_radius = CAR_TRACK_RADIUS_CELLS
+    if NEAR_OBJECT_TRACKING and NEAR_OBJECT_PREPARE_RADIUS_CELLS > search_radius:
+        search_radius = NEAR_OBJECT_PREPARE_RADIUS_CELLS
+
+    region_map, rw, rh, ox, oy = build_region_class_map(img, last_car, search_radius)
+
+    car_front = find_components_region(region_map, rw, rh, ox, oy, CLS_CAR_FRONT, MIN_CAR_PIXELS)
+    car_back  = find_components_region(region_map, rw, rh, ox, oy, CLS_CAR_BACK, MIN_CAR_PIXELS)
+    region_boxes     = find_components_region(region_map, rw, rh, ox, oy, CLS_BOX, MIN_BOX_PIXELS)
+    region_bomb_red  = find_components_region(region_map, rw, rh, ox, oy, CLS_BOMB_RED, MIN_BOMB_PIXELS)
+    region_bomb_dark = find_components_region(region_map, rw, rh, ox, oy, CLS_BOMB_DARK, MIN_BOMB_PIXELS)
+    all_bombs = region_bomb_red + region_bomb_dark
+
+    detected_car = find_best_car_pair(car_front, car_back,
+                                       CAR_MARKER_MIN_DIST, CAR_MARKER_MAX_DIST)
+
+    # 区域搜索丢失 → 全图回退一次
+    if detected_car is None and last_car is not None:
+        region_map2, rw2, rh2, ox2, oy2 = build_region_class_map(img, None, search_radius)
+        car_front = find_components_region(region_map2, rw2, rh2, ox2, oy2,
+                                           CLS_CAR_FRONT, MIN_CAR_PIXELS)
+        car_back  = find_components_region(region_map2, rw2, rh2, ox2, oy2,
+                                           CLS_CAR_BACK, MIN_CAR_PIXELS)
+        region_boxes     = find_components_region(region_map2, rw2, rh2, ox2, oy2,
+                                                   CLS_BOX, MIN_BOX_PIXELS)
+        region_bomb_red  = find_components_region(region_map2, rw2, rh2, ox2, oy2,
+                                                   CLS_BOMB_RED, MIN_BOMB_PIXELS)
+        region_bomb_dark = find_components_region(region_map2, rw2, rh2, ox2, oy2,
+                                                   CLS_BOMB_DARK, MIN_BOMB_PIXELS)
+        all_bombs = region_bomb_red + region_bomb_dark
+        detected_car = find_best_car_pair(car_front, car_back,
+                                           CAR_MARKER_MIN_DIST, CAR_MARKER_MAX_DIST)
+
+    if detected_car is not None:
+        car = detected_car
+        last_car = detected_car
+        car_missing_frames = 0
+    else:
+        car_missing_frames += 1
+        if last_car is not None and car_missing_frames <= MAX_CAR_HOLD_FRAMES:
+            car = last_car
+        else:
+            car = None
+
+    # ----- 11c. 近距物体过滤 -----
+    near_boxes = []
+    near_bombs = []
+    if NEAR_OBJECT_TRACKING and car is not None:
+        near_boxes = filter_near_components(region_boxes, car,
+                                            NEAR_OBJECT_RADIUS_CELLS, 4)
+        near_bombs = filter_near_components(all_bombs, car,
+                                            NEAR_OBJECT_RADIUS_CELLS, 2)
+
+    # ----- 11d. 发送 POS_UPDATE（周期） -----
+    if time.ticks_diff(now_ms, last_pos_update_ms) >= POS_UPDATE_PERIOD_MS:
+        last_pos_update_ms = now_ms
+        pos_boxes = near_boxes
+        if len(last_map_boxes) > len(pos_boxes):
+            pos_boxes = last_map_boxes
+        pkt = make_pos_update_binary(frame_id, car, pos_boxes, near_bombs)
+        uart_write_all(pkt)
+
+    # ----- 11e. 发送 FULL_MAP（仅 MCU 请求） -----
+    need_full_map = g_full_map_requested
+
+    if need_full_map:
+        g_full_map_requested = False
+
+        # 全图扫描（较慢，但只偶发）
+        cls_map = build_dynamic_class_map(img)
+
+        boxes = top_n(sort_by_position(
+            find_components(cls_map, CLS_BOX, MIN_BOX_PIXELS)), 4)
+        bomb_red  = find_components(cls_map, CLS_BOMB_RED, MIN_BOMB_PIXELS,
+                                    ignore_border=True)
+        bomb_dark = find_components(cls_map, CLS_BOMB_DARK, MIN_BOMB_PIXELS,
+                                    ignore_border=True)
+        bombs = top_n(sort_by_position(bomb_red + bomb_dark), 2)
+
+        # 全图扫描中如果车丢失，也尝试再检测一次
+        if car is None:
+            car_front2 = find_components(cls_map, CLS_CAR_FRONT, MIN_CAR_PIXELS)
+            car_back2  = find_components(cls_map, CLS_CAR_BACK, MIN_CAR_PIXELS)
+            detected_car2 = find_best_car_pair(car_front2, car_back2,
+                                                CAR_MARKER_MIN_DIST, CAR_MARKER_MAX_DIST)
+            if detected_car2 is not None:
+                car = detected_car2
+                last_car = detected_car2
+                car_missing_frames = 0
+
+        grid, goals = make_full_map_grid(img, boxes, bombs, car)
+        grid_boxes = detect_boxes_from_grid(grid)
+        if len(grid_boxes) > len(boxes):
+            boxes = grid_boxes
+        last_map_boxes = boxes
+
+        pkt = make_full_map_binary(grid, goals, boxes, bombs, car)
+        uart_write_all(pkt)
+
+        if PRINT_DEBUG:
+            debug_print_full_map(frame_id, grid, goals, boxes, bombs, car)
+
+    # ----- 11f. 调试叠加 -----
+    if DRAW_GRID_POINTS:
+        draw_grid_points(img, color=(0, 255, 0), size=2)
+
+    if DRAW_DEBUG_OVERLAY:
+        draw_grid(img)
+        for comp in region_boxes:
+            draw_component(img, comp, (255, 255, 0))
+        for comp in region_bomb_red:
+            draw_component(img, comp, (255, 0, 0))
+        for comp in region_bomb_dark:
+            draw_component(img, comp, (255, 255, 255))
+        for comp in car_front:
+            draw_component(img, comp, (0, 255, 255))
+        for comp in car_back:
+            draw_component(img, comp, (0, 255, 0))
+        draw_car(img, car)
+
+    frame_id = (frame_id + 1) & 0xFF
+    time.sleep_ms(10)

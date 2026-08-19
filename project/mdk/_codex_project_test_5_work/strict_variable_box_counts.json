@@ -1,0 +1,68 @@
+{
+  "started_at": "2026-07-18 09:03:24",
+  "results": [
+    {
+      "map": "map1(1).txt",
+      "status": "PASS",
+      "p1_seconds": 0.097,
+      "p1_raw_steps": 10,
+      "p1_structured_actions": 9,
+      "observed_boxes": [],
+      "observed_targets": [],
+      "assignments_tested": 1,
+      "max_p2_seconds": 0.036,
+      "total_seconds": 0.151
+    },
+    {
+      "map": "map2(1).txt",
+      "status": "PASS",
+      "p1_seconds": 3.369,
+      "p1_raw_steps": 17,
+      "p1_structured_actions": 14,
+      "observed_boxes": [
+        0
+      ],
+      "observed_targets": [
+        0
+      ],
+      "assignments_tested": 2,
+      "max_p2_seconds": 0.041,
+      "total_seconds": 3.452
+    },
+    {
+      "map": "map5(1).txt",
+      "status": "PASS",
+      "p1_seconds": 4.596,
+      "p1_raw_steps": 18,
+      "p1_structured_actions": 14,
+      "observed_boxes": [
+        0
+      ],
+      "observed_targets": [
+        0
+      ],
+      "assignments_tested": 2,
+      "max_p2_seconds": 0.055,
+      "total_seconds": 4.697
+    },
+    {
+      "map": "map6.txt",
+      "status": "PASS",
+      "p1_seconds": 0.436,
+      "p1_raw_steps": 16,
+      "p1_structured_actions": 8,
+      "observed_boxes": [
+        0
+      ],
+      "observed_targets": [
+        0
+      ],
+      "assignments_tested": 2,
+      "max_p2_seconds": 0.104,
+      "total_seconds": 0.647
+    }
+  ],
+  "finished_at": "2026-07-18 09:03:33",
+  "passed": 4,
+  "failed": 0
+}

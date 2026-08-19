@@ -1,0 +1,1382 @@
+[
+  {
+    "type": "free_move",
+    "target": [
+      2,
+      2
+    ],
+    "theta": null,
+    "waypoints": [
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        2,
+        2
+      ]
+    ],
+    "narrow_passage": false
+  },
+  {
+    "type": "push_bomb",
+    "target": [
+      2,
+      2
+    ],
+    "theta": null,
+    "push_meta": {
+      "bomb_id": 3,
+      "bomb_start": [
+        2,
+        2
+      ],
+      "bomb_target": [
+        2,
+        3
+      ],
+      "wall_target": [
+        2,
+        3
+      ],
+      "push_dir": "DOWN"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_bomb",
+    "target": [
+      2,
+      3
+    ],
+    "theta": null,
+    "push_meta": {
+      "bomb_id": 3,
+      "bomb_start": [
+        2,
+        3
+      ],
+      "bomb_target": [
+        2,
+        4
+      ],
+      "wall_target": [
+        2,
+        4
+      ],
+      "push_dir": "DOWN"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "wait",
+    "target": null,
+    "theta": null,
+    "duration": 0.5,
+    "reason": "bomb_explosion"
+  },
+  {
+    "type": "free_move",
+    "target": [
+      3,
+      7
+    ],
+    "theta": null,
+    "waypoints": [
+      [
+        2,
+        4
+      ],
+      [
+        2,
+        5
+      ],
+      [
+        2,
+        6
+      ],
+      [
+        2,
+        7
+      ],
+      [
+        3,
+        7
+      ]
+    ],
+    "narrow_passage": false
+  },
+  {
+    "type": "push_bomb",
+    "target": [
+      3,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "bomb_id": 4,
+      "bomb_start": [
+        3,
+        7
+      ],
+      "bomb_target": [
+        4,
+        7
+      ],
+      "wall_target": [
+        4,
+        7
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_bomb",
+    "target": [
+      4,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "bomb_id": 4,
+      "bomb_start": [
+        4,
+        7
+      ],
+      "bomb_target": [
+        5,
+        7
+      ],
+      "wall_target": [
+        5,
+        7
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_bomb",
+    "target": [
+      5,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "bomb_id": 4,
+      "bomb_start": [
+        5,
+        7
+      ],
+      "bomb_target": [
+        6,
+        7
+      ],
+      "wall_target": [
+        6,
+        7
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_bomb",
+    "target": [
+      6,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "bomb_id": 4,
+      "bomb_start": [
+        6,
+        7
+      ],
+      "bomb_target": [
+        7,
+        7
+      ],
+      "wall_target": [
+        7,
+        7
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_bomb",
+    "target": [
+      7,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "bomb_id": 4,
+      "bomb_start": [
+        7,
+        7
+      ],
+      "bomb_target": [
+        8,
+        7
+      ],
+      "wall_target": [
+        8,
+        7
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_bomb",
+    "target": [
+      8,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "bomb_id": 4,
+      "bomb_start": [
+        8,
+        7
+      ],
+      "bomb_target": [
+        9,
+        7
+      ],
+      "wall_target": [
+        9,
+        7
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_bomb",
+    "target": [
+      9,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "bomb_id": 4,
+      "bomb_start": [
+        9,
+        7
+      ],
+      "bomb_target": [
+        10,
+        7
+      ],
+      "wall_target": [
+        10,
+        7
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "free_move",
+    "target": [
+      2,
+      9
+    ],
+    "theta": null,
+    "waypoints": [
+      [
+        8,
+        7
+      ],
+      [
+        7,
+        7
+      ],
+      [
+        6,
+        7
+      ],
+      [
+        5,
+        7
+      ],
+      [
+        4,
+        7
+      ],
+      [
+        4,
+        8
+      ],
+      [
+        4,
+        9
+      ],
+      [
+        4,
+        10
+      ],
+      [
+        3,
+        10
+      ],
+      [
+        2,
+        10
+      ],
+      [
+        2,
+        9
+      ]
+    ],
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      2,
+      9
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 2,
+      "box_start": [
+        2,
+        9
+      ],
+      "box_target": [
+        2,
+        8
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "free_move",
+    "target": [
+      3,
+      8
+    ],
+    "theta": null,
+    "waypoints": [
+      [
+        3,
+        9
+      ],
+      [
+        3,
+        8
+      ]
+    ],
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      3,
+      8
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        3,
+        8
+      ],
+      "box_target": [
+        3,
+        7
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "free_move",
+    "target": [
+      2,
+      8
+    ],
+    "theta": null,
+    "waypoints": [
+      [
+        3,
+        9
+      ],
+      [
+        2,
+        9
+      ],
+      [
+        2,
+        8
+      ]
+    ],
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      2,
+      8
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 2,
+      "box_start": [
+        2,
+        8
+      ],
+      "box_target": [
+        2,
+        7
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      2,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 2,
+      "box_start": [
+        2,
+        7
+      ],
+      "box_target": [
+        2,
+        6
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      2,
+      6
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 2,
+      "box_start": [
+        2,
+        6
+      ],
+      "box_target": [
+        2,
+        5
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      2,
+      5
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 2,
+      "box_start": [
+        2,
+        5
+      ],
+      "box_target": [
+        2,
+        4
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "free_move",
+    "target": [
+      3,
+      7
+    ],
+    "theta": null,
+    "waypoints": [
+      [
+        2,
+        6
+      ],
+      [
+        2,
+        7
+      ],
+      [
+        3,
+        7
+      ]
+    ],
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      3,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        3,
+        7
+      ],
+      "box_target": [
+        4,
+        7
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      4,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        4,
+        7
+      ],
+      "box_target": [
+        5,
+        7
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      5,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        5,
+        7
+      ],
+      "box_target": [
+        6,
+        7
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      6,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        6,
+        7
+      ],
+      "box_target": [
+        7,
+        7
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      7,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        7,
+        7
+      ],
+      "box_target": [
+        8,
+        7
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      8,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        8,
+        7
+      ],
+      "box_target": [
+        9,
+        7
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "free_move",
+    "target": [
+      10,
+      7
+    ],
+    "theta": null,
+    "waypoints": [
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        8
+      ],
+      [
+        10,
+        8
+      ],
+      [
+        10,
+        7
+      ]
+    ],
+    "narrow_passage": false
+  },
+  {
+    "type": "push_bomb",
+    "target": [
+      10,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "bomb_id": 4,
+      "bomb_start": [
+        10,
+        7
+      ],
+      "bomb_target": [
+        10,
+        6
+      ],
+      "wall_target": [
+        10,
+        6
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_bomb",
+    "target": [
+      10,
+      6
+    ],
+    "theta": null,
+    "push_meta": {
+      "bomb_id": 4,
+      "bomb_start": [
+        10,
+        6
+      ],
+      "bomb_target": [
+        10,
+        5
+      ],
+      "wall_target": [
+        10,
+        5
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_bomb",
+    "target": [
+      10,
+      5
+    ],
+    "theta": null,
+    "push_meta": {
+      "bomb_id": 4,
+      "bomb_start": [
+        10,
+        5
+      ],
+      "bomb_target": [
+        10,
+        4
+      ],
+      "wall_target": [
+        10,
+        4
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_bomb",
+    "target": [
+      10,
+      4
+    ],
+    "theta": null,
+    "push_meta": {
+      "bomb_id": 4,
+      "bomb_start": [
+        10,
+        4
+      ],
+      "bomb_target": [
+        10,
+        3
+      ],
+      "wall_target": [
+        10,
+        3
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "wait",
+    "target": null,
+    "theta": null,
+    "duration": 0.5,
+    "reason": "bomb_explosion"
+  },
+  {
+    "type": "wait",
+    "target": null,
+    "theta": null,
+    "duration": 0.5,
+    "reason": "bomb_explosion"
+  },
+  {
+    "type": "free_move",
+    "target": [
+      9,
+      7
+    ],
+    "theta": null,
+    "waypoints": [
+      [
+        10,
+        3
+      ],
+      [
+        11,
+        3
+      ],
+      [
+        12,
+        3
+      ],
+      [
+        13,
+        3
+      ],
+      [
+        13,
+        4
+      ],
+      [
+        14,
+        4
+      ],
+      [
+        14,
+        5
+      ],
+      [
+        14,
+        6
+      ],
+      [
+        14,
+        7
+      ],
+      [
+        14,
+        8
+      ],
+      [
+        14,
+        9
+      ],
+      [
+        13,
+        9
+      ],
+      [
+        13,
+        8
+      ],
+      [
+        13,
+        7
+      ],
+      [
+        13,
+        6
+      ],
+      [
+        13,
+        5
+      ],
+      [
+        12,
+        5
+      ],
+      [
+        11,
+        5
+      ],
+      [
+        10,
+        5
+      ],
+      [
+        10,
+        6
+      ],
+      [
+        10,
+        7
+      ],
+      [
+        10,
+        8
+      ],
+      [
+        9,
+        8
+      ],
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        8
+      ],
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        8
+      ],
+      [
+        9,
+        7
+      ]
+    ],
+    "narrow_passage": true
+  },
+  {
+    "type": "push_box",
+    "target": [
+      9,
+      7
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        9,
+        7
+      ],
+      "box_target": [
+        9,
+        6
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      9,
+      6
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        9,
+        6
+      ],
+      "box_target": [
+        9,
+        5
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "free_move",
+    "target": [
+      9,
+      5
+    ],
+    "theta": null,
+    "waypoints": [
+      [
+        8,
+        6
+      ],
+      [
+        8,
+        5
+      ],
+      [
+        9,
+        5
+      ]
+    ],
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      9,
+      5
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        9,
+        5
+      ],
+      "box_target": [
+        10,
+        5
+      ],
+      "push_dir": "RIGHT"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "free_move",
+    "target": [
+      10,
+      5
+    ],
+    "theta": null,
+    "waypoints": [
+      [
+        9,
+        6
+      ],
+      [
+        10,
+        6
+      ],
+      [
+        10,
+        5
+      ]
+    ],
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      10,
+      5
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        10,
+        5
+      ],
+      "box_target": [
+        10,
+        4
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      10,
+      4
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        10,
+        4
+      ],
+      "box_target": [
+        10,
+        3
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      10,
+      3
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        10,
+        3
+      ],
+      "box_target": [
+        10,
+        2
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      10,
+      2
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        10,
+        2
+      ],
+      "box_target": [
+        10,
+        1
+      ],
+      "push_dir": "UP"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "free_move",
+    "target": [
+      10,
+      1
+    ],
+    "theta": null,
+    "waypoints": [
+      [
+        11,
+        2
+      ],
+      [
+        11,
+        1
+      ],
+      [
+        10,
+        1
+      ]
+    ],
+    "narrow_passage": true
+  },
+  {
+    "type": "push_box",
+    "target": [
+      10,
+      1
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 0,
+      "box_start": [
+        10,
+        1
+      ],
+      "box_target": [
+        9,
+        1
+      ],
+      "push_dir": "LEFT"
+    },
+    "narrow_passage": true
+  },
+  {
+    "type": "free_move",
+    "target": [
+      11,
+      8
+    ],
+    "theta": null,
+    "waypoints": [
+      [
+        10,
+        2
+      ],
+      [
+        10,
+        3
+      ],
+      [
+        10,
+        4
+      ],
+      [
+        10,
+        5
+      ],
+      [
+        10,
+        6
+      ],
+      [
+        10,
+        7
+      ],
+      [
+        10,
+        8
+      ],
+      [
+        10,
+        7
+      ],
+      [
+        11,
+        7
+      ],
+      [
+        11,
+        8
+      ]
+    ],
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      11,
+      8
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 1,
+      "box_start": [
+        11,
+        8
+      ],
+      "box_target": [
+        11,
+        9
+      ],
+      "push_dir": "DOWN"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "push_box",
+    "target": [
+      11,
+      9
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 1,
+      "box_start": [
+        11,
+        9
+      ],
+      "box_target": [
+        11,
+        10
+      ],
+      "push_dir": "DOWN"
+    },
+    "narrow_passage": false
+  },
+  {
+    "type": "free_move",
+    "target": [
+      11,
+      10
+    ],
+    "theta": null,
+    "waypoints": [
+      [
+        12,
+        9
+      ],
+      [
+        12,
+        10
+      ],
+      [
+        11,
+        10
+      ]
+    ],
+    "narrow_passage": true
+  },
+  {
+    "type": "push_box",
+    "target": [
+      11,
+      10
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 1,
+      "box_start": [
+        11,
+        10
+      ],
+      "box_target": [
+        10,
+        10
+      ],
+      "push_dir": "LEFT"
+    },
+    "narrow_passage": true
+  },
+  {
+    "type": "push_box",
+    "target": [
+      10,
+      10
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 1,
+      "box_start": [
+        10,
+        10
+      ],
+      "box_target": [
+        9,
+        10
+      ],
+      "push_dir": "LEFT"
+    },
+    "narrow_passage": true
+  },
+  {
+    "type": "push_box",
+    "target": [
+      9,
+      10
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 1,
+      "box_start": [
+        9,
+        10
+      ],
+      "box_target": [
+        8,
+        10
+      ],
+      "push_dir": "LEFT"
+    },
+    "narrow_passage": true
+  },
+  {
+    "type": "push_box",
+    "target": [
+      8,
+      10
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 1,
+      "box_start": [
+        8,
+        10
+      ],
+      "box_target": [
+        7,
+        10
+      ],
+      "push_dir": "LEFT"
+    },
+    "narrow_passage": true
+  },
+  {
+    "type": "push_box",
+    "target": [
+      7,
+      10
+    ],
+    "theta": null,
+    "push_meta": {
+      "box_id": 1,
+      "box_start": [
+        7,
+        10
+      ],
+      "box_target": [
+        6,
+        10
+      ],
+      "push_dir": "LEFT"
+    },
+    "narrow_passage": true
+  }
+]

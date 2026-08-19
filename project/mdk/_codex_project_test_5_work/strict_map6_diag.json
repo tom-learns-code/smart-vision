@@ -1,0 +1,13 @@
+{
+  "started_at": "2026-07-18 09:02:04",
+  "results": [
+    {
+      "map": "map6.txt",
+      "status": "FAIL",
+      "error": "ValidationError: P2 ends with unfinished boxes: [1]"
+    }
+  ],
+  "finished_at": "2026-07-18 09:02:04",
+  "passed": 0,
+  "failed": 1
+}
